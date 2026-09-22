@@ -61,15 +61,23 @@ jobs:
           if [ $code -ne 124 ]; then echo "App exited early with code $code"; exit 1; fi
           echo "App stayed running under Xvfb."
 
+      # macOS has no `timeout` (that's GNU coreutils), so run it in the background
+      # and check it's still alive. The x64 build is skipped: it would need Rosetta
+      # on these arm64 runners.
       - name: Smoke test (macOS)
         if: runner.os == 'macOS' && matrix.rid == 'osx-arm64'
         run: |
-          set +e
-          timeout 15 ./publish/AutoClicker
-          code=$?
-          set -e
-          if [ $code -ne 124 ]; then echo "App exited early with code $code"; exit 1; fi
-          echo "App stayed running."
+          ./publish/AutoClicker &
+          pid=$!
+          sleep 15
+          if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"
+            echo "App stayed running."
+          else
+            set +e; wait "$pid"; code=$?; set -e
+            echo "App exited early with code $code"
+            exit 1
+          fi
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
