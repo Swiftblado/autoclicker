@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Auto Clicker
+Comment=Automatic mouse clicker and key presser
+Exec=autoclicker
+Icon=autoclicker
+Terminal=false
+Categories=Utility;
+Keywords=autoclicker;clicker;macro;keyboard;

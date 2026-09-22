@@ -1,0 +1,148 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AutoClicker.Views.MainWindow"
+        Title="Auto Clicker"
+        Icon="/Assets/icon.png"
+        SizeToContent="WidthAndHeight"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen">
+
+  <StackPanel Margin="16" Spacing="10" Width="500">
+
+    <!-- Shown when the OS won't let us send input (macOS permission, Wayland, missing libs). -->
+    <Border x:Name="WarningBar" IsVisible="False" CornerRadius="6" Padding="12,10"
+            Background="#33D97706" BorderBrush="#D97706" BorderThickness="1">
+      <TextBlock x:Name="WarningText" TextWrapping="Wrap" />
+    </Border>
+
+    <StackPanel Orientation="Horizontal" Spacing="16">
+      <TextBlock Text="Automate:" Classes="label" />
+      <RadioButton x:Name="ModeMouse" GroupName="Mode" Content="Mouse clicks" IsChecked="True" />
+      <RadioButton x:Name="ModeKeyboard" GroupName="Mode" Content="Key presses" />
+    </StackPanel>
+
+    <StackPanel Spacing="2">
+      <TextBlock Text="Mouse" Classes="sectionTitle" />
+      <Border x:Name="MouseCard" Classes="card">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" >
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Button:" Classes="label" />
+          <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="0">
+            <ComboBox x:Name="ButtonBox" Width="110" SelectedIndex="0">
+              <ComboBoxItem>Left</ComboBoxItem>
+              <ComboBoxItem>Right</ComboBoxItem>
+              <ComboBoxItem>Middle</ComboBoxItem>
+            </ComboBox>
+            <TextBlock Text="Click:" Classes="label" Margin="14,0,10,0" />
+            <ComboBox x:Name="ClickTypeBox" Width="110" SelectedIndex="0">
+              <ComboBoxItem>Single</ComboBoxItem>
+              <ComboBoxItem>Double</ComboBoxItem>
+            </ComboBox>
+          </StackPanel>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Click at:" Classes="label" Margin="0,12,10,0" />
+          <StackPanel Grid.Row="1" Grid.Column="1" Spacing="6" Margin="0,12,0,0">
+            <RadioButton x:Name="PositionCursor" GroupName="Position" Content="Wherever the cursor is" IsChecked="True" />
+            <StackPanel Orientation="Horizontal" Spacing="0">
+              <RadioButton x:Name="PositionFixed" GroupName="Position" Content="Fixed spot"
+                           VerticalAlignment="Center" Margin="0,0,10,0" />
+              <TextBlock Text="X" Classes="unit" Margin="0,0,4,0" />
+              <NumericUpDown x:Name="PositionX" Width="84" Minimum="-32000" Maximum="32000"
+                             Value="0" Increment="1" FormatString="0" />
+              <TextBlock Text="Y" Classes="unit" Margin="8,0,4,0" />
+              <NumericUpDown x:Name="PositionY" Width="84" Minimum="-32000" Maximum="32000"
+                             Value="0" Increment="1" FormatString="0" />
+              <Button x:Name="PickButton" Content="Pick" Width="62" Margin="8,0,0,0" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </StackPanel>
+
+    <StackPanel Spacing="2">
+      <TextBlock Text="Keyboard" Classes="sectionTitle" />
+      <Border x:Name="KeyboardCard" Classes="card">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Key:" Classes="label" />
+          <Border Grid.Row="0" Grid.Column="1" x:Name="KeyCapture" Classes="keyCapture"
+                  Focusable="True" HorizontalAlignment="Left">
+            <TextBlock x:Name="KeyCaptureText" Text="Click here, then press a key"
+                       HorizontalAlignment="Center" Opacity="0.6" />
+          </Border>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="With:" Classes="label" Margin="0,12,10,0" />
+          <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="14" Margin="0,12,0,0">
+            <CheckBox x:Name="ModCtrl" Content="Ctrl" />
+            <CheckBox x:Name="ModShift" Content="Shift" />
+            <CheckBox x:Name="ModAlt" Content="Alt" />
+            <CheckBox x:Name="ModMeta" Content="Win" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Hold for:" Classes="label" Margin="0,12,10,0" />
+          <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,12,0,0">
+            <NumericUpDown x:Name="HoldMs" Width="90" Minimum="0" Maximum="10000" Value="30"
+                           Increment="10" FormatString="0" />
+            <TextBlock Text="ms" Classes="unit" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </StackPanel>
+
+    <StackPanel Spacing="2">
+      <TextBlock Text="Timing" Classes="sectionTitle" />
+      <Border x:Name="TimingCard" Classes="card">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Every:" Classes="label" />
+          <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+            <NumericUpDown x:Name="Hours" Width="60" Minimum="0" Maximum="23" Value="0" FormatString="0" />
+            <TextBlock Text="h" Classes="unit" />
+            <NumericUpDown x:Name="Minutes" Width="60" Minimum="0" Maximum="59" Value="0" FormatString="0" />
+            <TextBlock Text="m" Classes="unit" />
+            <NumericUpDown x:Name="Seconds" Width="60" Minimum="0" Maximum="59" Value="0" FormatString="0" />
+            <TextBlock Text="s" Classes="unit" />
+            <NumericUpDown x:Name="Millis" Width="68" Minimum="0" Maximum="999" Value="100" Increment="10" FormatString="0" />
+            <TextBlock Text="ms" Classes="unit" Margin="4,0,0,0" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Randomize:" Classes="label" Margin="0,12,10,0" />
+          <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,12,0,0">
+            <TextBlock Text="±" Classes="unit" Margin="0,0,6,0" />
+            <NumericUpDown x:Name="Jitter" Width="90" Minimum="0" Maximum="100000" Value="0"
+                           Increment="10" FormatString="0" />
+            <TextBlock Text="ms" Classes="unit" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Repeat:" Classes="label" Margin="0,12,10,0" />
+          <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,12,0,0">
+            <RadioButton x:Name="RepeatForever" GroupName="Repeat" Content="Until stopped"
+                         IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0" />
+            <RadioButton x:Name="RepeatLimited" GroupName="Repeat" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <NumericUpDown x:Name="RepeatCount" Width="104" Minimum="1" Maximum="10000000" Value="10" FormatString="0" />
+            <TextBlock Text="times" Classes="unit" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </StackPanel>
+
+    <StackPanel Spacing="2">
+      <TextBlock Text="Options" Classes="sectionTitle" />
+      <Border x:Name="OptionsCard" Classes="card">
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Text="Start/stop key:" Classes="label" />
+          <ComboBox x:Name="HotkeyBox" Width="92" SelectedIndex="5" />
+          <CheckBox x:Name="TopMostBox" Content="Keep window on top" Margin="18,0,0,0" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
+    <Grid ColumnDefinitions="*,12,*" Margin="0,4,0,0">
+      <Button x:Name="StartButton" Grid.Column="0" Content="Start" Height="42"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              FontWeight="SemiBold" Classes="accent" />
+      <Button x:Name="StopButton" Grid.Column="2" Content="Stop" Height="42"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              FontWeight="SemiBold" IsEnabled="False" />
+    </Grid>
+
+    <TextBlock x:Name="StatusText" TextWrapping="Wrap" Opacity="0.75" Text="Ready." />
+  </StackPanel>
+</Window>

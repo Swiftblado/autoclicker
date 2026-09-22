@@ -1,18 +1,29 @@
 # Auto Clicker
 
-A small, portable Windows app that automatically clicks the mouse or presses a key on a timer.
+A small, portable auto clicker and key presser for **Windows, macOS and Linux**. One app, nothing to install: download the file for your computer and open it.
 
 - **Mouse clicks**: left, right or middle button, single or double click, at the cursor or at a fixed spot (use **Pick** to grab a spot).
-- **Key presses**: any key, optionally with Ctrl, Shift or Alt, and a set hold time.
+- **Key presses**: any key, optionally with Ctrl, Shift, Alt/Option or Win/Cmd/Super, and a set hold time.
 - **Timing**: an interval from 1 ms up to 24 hours, optional random variation (±ms), and either repeat until stopped or a set number of times.
 - **Global hotkey**: F6 by default (F1–F12 selectable) starts and stops it from any window.
-- Settings are remembered between runs in `%APPDATA%\AutoClicker\settings.ini`.
+- Settings are remembered between runs.
 
-## Download & run
+## Download
 
-Grab `AutoClicker.exe` and double-click it. It's a single ~45 KB file with no installer. It needs .NET Framework 4.x, which comes with Windows 10 and 11.
+Get the file for your machine from the [latest release](https://github.com/Swiftblado/autoclicker/releases/latest):
 
-> Windows SmartScreen may warn about an unsigned app the first time. Click **More info → Run anyway**.
+| Your computer | Download |
+| --- | --- |
+| Windows 10/11 | `AutoClicker-windows-x64.exe` |
+| Mac with Apple silicon (M1 and newer) | `AutoClicker-macos-arm64.zip` |
+| Mac with an Intel processor | `AutoClicker-macos-x64.zip` |
+| Linux (X11 session) | `AutoClicker-linux-x64.tar.gz` |
+
+### First run
+
+- **Windows** — SmartScreen warns about unsigned apps. Click **More info → Run anyway**.
+- **macOS** — unzip, drag the app to Applications, then right-click it and choose **Open**, since it isn't signed by Apple. macOS then needs Accessibility permission: **System Settings → Privacy & Security → Accessibility**, switch Auto Clicker on, then quit and reopen the app. No app can send clicks or keys without that permission; Auto Clicker shows a banner until it's granted.
+- **Linux** — unpack, then either run `./install.sh` (adds it to your applications menu) or run `./AutoClicker` directly. Needs an **Xorg** session and `libX11`/`libXtst` (installed by default on most desktops).
 
 ## Usage
 
@@ -20,16 +31,43 @@ Grab `AutoClicker.exe` and double-click it. It's a single ~45 KB file with no in
 2. Set the interval under **Timing**.
 3. Hover over your target (or switch to the target window) and press **F6**. Press **F6** again to stop.
 
-If you click the **Start** button instead of using the hotkey, it counts down for 3 seconds so you can switch to the target window first.
+Clicking **Start** instead counts down 3 seconds first, so you can switch to the target window before it begins.
 
-**Note:** Windows blocks non-admin apps from sending input to programs running as administrator. To automate an elevated app, right-click `AutoClicker.exe` and choose **Run as administrator**.
+## Platform notes
+
+- **Wayland (Linux):** Wayland deliberately stops apps from sending input to other apps, and there's no portal for it yet, so Auto Clicker needs an Xorg session. Pick "Ubuntu on Xorg" (or your desktop's X11 option) at the login screen. The app says so on screen if it detects Wayland.
+- **Elevated windows (Windows):** Windows blocks non-admin apps from sending input into programs running as administrator. Right-click the `.exe` and choose **Run as administrator** to automate those.
+- **Hotkey conflicts:** if another app already owns the hotkey, the app says so in the status line; pick a different F-key in **Options**.
 
 ## Build from source
 
-No SDK is needed; the build uses the C# compiler that ships with Windows:
+Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download). The UI is [Avalonia](https://avaloniaui.net/), so the same code builds for all three systems.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build.ps1
+.\build.ps1                      # this machine
+.\build.ps1 -Runtime linux-x64   # or osx-arm64, osx-x64, win-arm64...
 ```
 
-The output is `dist\AutoClicker.exe`. `tools\make-icon.ps1` regenerates `src\app.ico`.
+```bash
+dotnet publish src/AutoClicker/AutoClicker.csproj -c Release -r linux-x64 \
+  --self-contained true -p:PublishSingleFile=true -o dist/linux-x64
+```
+
+`tools/make-icons.ps1` regenerates the icon files (Windows `.ico`, macOS `.iconset`, PNGs). Every push builds on real Windows, macOS and Linux runners via [GitHub Actions](.github/workflows/build.yml); pushing a `v*` tag publishes a release with all four downloads attached.
+
+## How it's put together
+
+```
+src/AutoClicker/
+  Core/      Runner.cs (timing loop), Settings.cs, InputActions.cs
+  Input/     one backend per OS, behind IInputBackend:
+             Windows SendInput · macOS CGEvent · Linux XTest
+  Hotkeys/   global hotkey per OS:
+             RegisterHotKey · Carbon RegisterEventHotKey · X11 XGrabKey
+  Views/     MainWindow.axaml — the whole UI
+packaging/   macOS .app bundling, Linux .desktop + installer, icons
+```
+
+## Status
+
+The Windows build is tested by hand: clicks and key presses land where they should, at the interval set. The macOS and Linux builds compile and start on real runners in CI, but nobody has clicked through their UIs yet — please [open an issue](https://github.com/Swiftblado/autoclicker/issues) if something there misbehaves.

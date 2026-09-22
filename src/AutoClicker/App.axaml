@@ -1,0 +1,58 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AutoClicker.App"
+             RequestedThemeVariant="Default">
+
+  <Application.Styles>
+    <FluentTheme />
+
+    <!-- Section card: a titled box grouping related settings. -->
+    <!-- Neutral translucent colours so the cards read correctly in both light and dark themes. -->
+    <Style Selector="Border.card">
+      <Setter Property="BorderBrush" Value="#40808080" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="12" />
+    </Style>
+
+    <Style Selector="TextBlock.sectionTitle">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="2,0,0,4" />
+    </Style>
+
+    <Style Selector="TextBlock.label">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+    </Style>
+
+    <Style Selector="TextBlock.unit">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="4,0,10,0" />
+      <Setter Property="Opacity" Value="0.8" />
+    </Style>
+
+    <!-- The spinner buttons eat most of a narrow box, so type the value instead.
+         Up/Down arrow keys still step it while the box has focus. -->
+    <Style Selector="NumericUpDown">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="ShowButtonSpinner" Value="False" />
+      <Setter Property="HorizontalContentAlignment" Value="Right" />
+    </Style>
+
+    <!-- The box that records the key to press. -->
+    <Style Selector="Border.keyCapture">
+      <Setter Property="BorderBrush" Value="#80808080" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="MinWidth" Value="170" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
+    <Style Selector="Border.keyCapture:focus-within">
+      <Setter Property="BorderBrush" Value="#3B82F6" />
+      <Setter Property="BorderThickness" Value="2" />
+      <Setter Property="Padding" Value="9,5" />
+    </Style>
+  </Application.Styles>
+</Application>

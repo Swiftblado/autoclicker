@@ -1,0 +1,140 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            artifact: AutoClicker-windows-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+            artifact: AutoClicker-linux-x64
+          - os: macos-latest
+            rid: osx-arm64
+            artifact: AutoClicker-macos-arm64
+          - os: macos-latest
+            rid: osx-x64
+            artifact: AutoClicker-macos-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        shell: bash
+        run: |
+          dotnet publish src/AutoClicker/AutoClicker.csproj \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            --output publish
+
+      # Does it actually start on this OS? Staying alive for 15s means the window opened
+      # without crashing; `timeout` then reports 124, which is the result we want.
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libx11-6 libxtst6 libice6 libsm6 libfontconfig1
+          set +e
+          xvfb-run -a timeout 15 ./publish/AutoClicker
+          code=$?
+          set -e
+          if [ $code -ne 124 ]; then echo "App exited early with code $code"; exit 1; fi
+          echo "App stayed running under Xvfb."
+
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS' && matrix.rid == 'osx-arm64'
+        run: |
+          set +e
+          timeout 15 ./publish/AutoClicker
+          code=$?
+          set -e
+          if [ $code -ne 124 ]; then echo "App exited early with code $code"; exit 1; fi
+          echo "App stayed running."
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process ./publish/AutoClicker.exe -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { throw "App exited early with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id
+          Write-Host "App stayed running."
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp publish/AutoClicker.exe "dist/${{ matrix.artifact }}.exe"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist stage
+          cp publish/AutoClicker stage/
+          cp packaging/linux/autoclicker.desktop packaging/linux/install.sh stage/
+          cp packaging/icons/icon-256.png stage/
+          chmod +x stage/AutoClicker stage/install.sh
+          tar -czf "dist/${{ matrix.artifact }}.tar.gz" -C stage .
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          version="${GITHUB_REF_NAME#v}"
+          case "$version" in refs/*|main) version="2.0.0" ;; esac
+          chmod +x packaging/macos/bundle.sh
+          packaging/macos/bundle.sh publish "dist/AutoClicker.app" "$version"
+          # ditto keeps the bundle's permissions and symlinks intact inside the zip
+          ditto -c -k --sequesterRsrc --keepParent "dist/AutoClicker.app" "dist/${{ matrix.artifact }}.zip"
+          rm -rf "dist/AutoClicker.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
+            --title "Auto Clicker $GITHUB_REF_NAME" \
+            --notes-file .github/release-notes.md
