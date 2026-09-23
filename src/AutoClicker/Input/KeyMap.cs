@@ -121,6 +121,37 @@ public static class KeyMap
         [Key.RWin] = new("Right Meta", 0x5C, 54, "Super_R"),
     };
 
+    // Reverse lookups, used when recording turns real platform events back into keys.
+    static readonly Dictionary<ushort, Key> ByWindowsVk = [];
+    static readonly Dictionary<ushort, Key> ByMacKeyCode = [];
+    static readonly Dictionary<string, Key> ByX11Keysym = new(StringComparer.Ordinal);
+
+    static KeyMap()
+    {
+        foreach (var (key, codes) in Map)
+        {
+            ByWindowsVk.TryAdd(codes.WindowsVk, key);
+            ByMacKeyCode.TryAdd(codes.MacKeyCode, key);
+            ByX11Keysym.TryAdd(codes.X11Keysym, key);
+        }
+    }
+
+    public static bool TryFromWindowsVk(ushort vk, out Key key) => ByWindowsVk.TryGetValue(vk, out key);
+
+    public static bool TryFromMacKeyCode(ushort code, out Key key) => ByMacKeyCode.TryGetValue(code, out key);
+
+    public static bool TryFromX11Keysym(string name, out Key key) => ByX11Keysym.TryGetValue(name, out key);
+
+    /// <summary>The modifier flag a key contributes, or None if it isn't a modifier.</summary>
+    public static Modifiers ModifierOf(Key key) => key switch
+    {
+        Key.LeftCtrl or Key.RightCtrl => Modifiers.Control,
+        Key.LeftShift or Key.RightShift => Modifiers.Shift,
+        Key.LeftAlt or Key.RightAlt => Modifiers.Alt,
+        Key.LWin or Key.RWin => Modifiers.Meta,
+        _ => Modifiers.None
+    };
+
     public static bool TryGet(Key key, out KeyCodes codes) => Map.TryGetValue(key, out codes);
 
     public static bool IsSupported(Key key) => Map.ContainsKey(key);

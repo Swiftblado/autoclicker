@@ -31,6 +31,20 @@ sealed class WindowsInputBackend : IInputBackend
         SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
 
+    public void SendMouseButton(ClickButton button, bool down)
+    {
+        uint flags = (button, down) switch
+        {
+            (ClickButton.Right, true) => MOUSEEVENTF_RIGHTDOWN,
+            (ClickButton.Right, false) => MOUSEEVENTF_RIGHTUP,
+            (ClickButton.Middle, true) => MOUSEEVENTF_MIDDLEDOWN,
+            (ClickButton.Middle, false) => MOUSEEVENTF_MIDDLEUP,
+            (_, true) => MOUSEEVENTF_LEFTDOWN,
+            (_, false) => MOUSEEVENTF_LEFTUP
+        };
+        SendInput(1, [MouseInput(flags)], Marshal.SizeOf<INPUT>());
+    }
+
     public void SendKey(Key key, bool down)
     {
         if (!KeyMap.TryGet(key, out var codes)) return;

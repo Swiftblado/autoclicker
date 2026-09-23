@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="AutoClicker.Views.MainWindow"
         Title="Auto Clicker"
@@ -15,18 +15,23 @@
       <TextBlock x:Name="WarningText" TextWrapping="Wrap" />
     </Border>
 
-    <StackPanel Orientation="Horizontal" Spacing="16">
+    <StackPanel Orientation="Horizontal" Spacing="10">
       <TextBlock Text="Automate:" Classes="label" />
-      <RadioButton x:Name="ModeMouse" GroupName="Mode" Content="Mouse clicks" IsChecked="True" />
-      <RadioButton x:Name="ModeKeyboard" GroupName="Mode" Content="Key presses" />
+      <ComboBox x:Name="ModeBox" Width="180" SelectedIndex="0">
+        <ComboBoxItem>Mouse clicks</ComboBoxItem>
+        <ComboBoxItem>Mouse drags</ComboBoxItem>
+        <ComboBoxItem>Key presses</ComboBoxItem>
+        <ComboBoxItem>Macro</ComboBoxItem>
+      </ComboBox>
     </StackPanel>
 
-    <StackPanel Spacing="2">
-      <TextBlock Text="Mouse" Classes="sectionTitle" />
-      <Border x:Name="MouseCard" Classes="card">
-        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" >
+    <!-- ============================================================ clicks -->
+    <StackPanel x:Name="MouseSection" Spacing="2">
+      <TextBlock Text="Mouse clicks" Classes="sectionTitle" />
+      <Border Classes="card">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
           <TextBlock Grid.Row="0" Grid.Column="0" Text="Button:" Classes="label" />
-          <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="0">
+          <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
             <ComboBox x:Name="ButtonBox" Width="110" SelectedIndex="0">
               <ComboBoxItem>Left</ComboBoxItem>
               <ComboBoxItem>Right</ComboBoxItem>
@@ -42,15 +47,13 @@
           <TextBlock Grid.Row="1" Grid.Column="0" Text="Click at:" Classes="label" Margin="0,12,10,0" />
           <StackPanel Grid.Row="1" Grid.Column="1" Spacing="6" Margin="0,12,0,0">
             <RadioButton x:Name="PositionCursor" GroupName="Position" Content="Wherever the cursor is" IsChecked="True" />
-            <StackPanel Orientation="Horizontal" Spacing="0">
+            <StackPanel Orientation="Horizontal">
               <RadioButton x:Name="PositionFixed" GroupName="Position" Content="Fixed spot"
                            VerticalAlignment="Center" Margin="0,0,10,0" />
               <TextBlock Text="X" Classes="unit" Margin="0,0,4,0" />
-              <NumericUpDown x:Name="PositionX" Width="84" Minimum="-32000" Maximum="32000"
-                             Value="0" Increment="1" FormatString="0" />
+              <NumericUpDown x:Name="PositionX" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
               <TextBlock Text="Y" Classes="unit" Margin="8,0,4,0" />
-              <NumericUpDown x:Name="PositionY" Width="84" Minimum="-32000" Maximum="32000"
-                             Value="0" Increment="1" FormatString="0" />
+              <NumericUpDown x:Name="PositionY" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
               <Button x:Name="PickButton" Content="Pick" Width="62" Margin="8,0,0,0" />
             </StackPanel>
           </StackPanel>
@@ -58,9 +61,49 @@
       </Border>
     </StackPanel>
 
-    <StackPanel Spacing="2">
-      <TextBlock Text="Keyboard" Classes="sectionTitle" />
-      <Border x:Name="KeyboardCard" Classes="card">
+    <!-- ============================================================= drags -->
+    <StackPanel x:Name="DragSection" Spacing="2" IsVisible="False">
+      <TextBlock Text="Mouse drags" Classes="sectionTitle" />
+      <Border Classes="card">
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Drag from:" Classes="label" />
+          <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+            <TextBlock Text="X" Classes="unit" Margin="0,0,4,0" />
+            <NumericUpDown x:Name="DragFromX" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+            <TextBlock Text="Y" Classes="unit" Margin="8,0,4,0" />
+            <NumericUpDown x:Name="DragFromY" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+            <Button x:Name="DragFromPick" Content="Pick" Width="62" Margin="8,0,0,0" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="to:" Classes="label" Margin="0,8,10,0" />
+          <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,8,0,0">
+            <TextBlock Text="X" Classes="unit" Margin="0,0,4,0" />
+            <NumericUpDown x:Name="DragToX" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+            <TextBlock Text="Y" Classes="unit" Margin="8,0,4,0" />
+            <NumericUpDown x:Name="DragToY" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+            <Button x:Name="DragToPick" Content="Pick" Width="62" Margin="8,0,0,0" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Button:" Classes="label" Margin="0,10,10,0" />
+          <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,10,0,0">
+            <ComboBox x:Name="DragButtonBox" Width="110" SelectedIndex="0">
+              <ComboBoxItem>Left</ComboBoxItem>
+              <ComboBoxItem>Right</ComboBoxItem>
+              <ComboBoxItem>Middle</ComboBoxItem>
+            </ComboBox>
+            <TextBlock Text="taking" Classes="label" Margin="14,0,10,0" />
+            <NumericUpDown x:Name="DragDuration" Width="90" Minimum="10" Maximum="60000" Value="400"
+                           Increment="50" FormatString="0" />
+            <TextBlock Text="ms" Classes="unit" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </StackPanel>
+
+    <!-- ========================================================== keyboard -->
+    <StackPanel x:Name="KeyboardSection" Spacing="2" IsVisible="False">
+      <TextBlock Text="Key presses" Classes="sectionTitle" />
+      <Border Classes="card">
         <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
           <TextBlock Grid.Row="0" Grid.Column="0" Text="Key:" Classes="label" />
           <Border Grid.Row="0" Grid.Column="1" x:Name="KeyCapture" Classes="keyCapture"
@@ -70,7 +113,7 @@
           </Border>
 
           <TextBlock Grid.Row="1" Grid.Column="0" Text="With:" Classes="label" Margin="0,12,10,0" />
-          <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="14" Margin="0,12,0,0">
+          <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="0,12,0,0">
             <CheckBox x:Name="ModCtrl" Content="Ctrl" />
             <CheckBox x:Name="ModShift" Content="Shift" />
             <CheckBox x:Name="ModAlt" Content="Alt" />
@@ -87,8 +130,115 @@
       </Border>
     </StackPanel>
 
+    <!-- ============================================================= macro -->
+    <StackPanel x:Name="MacroSection" Spacing="2" IsVisible="False">
+      <TextBlock Text="Macro" Classes="sectionTitle" />
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button x:Name="RecordButton" Content="Record" Width="104" />
+            <TextBlock x:Name="MacroSummary" Classes="unit" VerticalAlignment="Center" Text="No steps yet." />
+          </StackPanel>
+
+          <ListBox x:Name="StepList" Height="150" />
+
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="StepUpButton" Content="Up" Width="54" />
+            <Button x:Name="StepDownButton" Content="Down" Width="66" />
+            <Button x:Name="StepDeleteButton" Content="Delete" Width="72" />
+            <Button x:Name="StepClearButton" Content="Clear" Width="64" />
+            <Button x:Name="MacroOpenButton" Content="Open..." Width="78" Margin="12,0,0,0" />
+            <Button x:Name="MacroSaveButton" Content="Save..." Width="78" />
+          </StackPanel>
+
+          <Border BorderBrush="#40808080" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+            <StackPanel Spacing="8">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Add step:" Classes="label" Margin="0" />
+                <ComboBox x:Name="StepTypeBox" Width="110" SelectedIndex="0">
+                  <ComboBoxItem>Click</ComboBoxItem>
+                  <ComboBoxItem>Drag</ComboBoxItem>
+                  <ComboBoxItem>Key</ComboBoxItem>
+                  <ComboBoxItem>Wait</ComboBoxItem>
+                </ComboBox>
+                <Button x:Name="StepAddButton" Content="Add" Width="70" />
+                <Button x:Name="StepReplaceButton" Content="Replace" Width="86" />
+              </StackPanel>
+
+              <StackPanel x:Name="StepClickPanel" Orientation="Horizontal" Spacing="6">
+                <ComboBox x:Name="StepClickButtonBox" Width="88" SelectedIndex="0">
+                  <ComboBoxItem>Left</ComboBoxItem>
+                  <ComboBoxItem>Right</ComboBoxItem>
+                  <ComboBoxItem>Middle</ComboBoxItem>
+                </ComboBox>
+                <ComboBox x:Name="StepClickTypeBox" Width="94" SelectedIndex="0">
+                  <ComboBoxItem>Single</ComboBoxItem>
+                  <ComboBoxItem>Double</ComboBoxItem>
+                </ComboBox>
+                <TextBlock Text="X" Classes="unit" Margin="4,0,2,0" />
+                <NumericUpDown x:Name="StepClickX" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                <TextBlock Text="Y" Classes="unit" Margin="4,0,2,0" />
+                <NumericUpDown x:Name="StepClickY" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                <Button x:Name="StepClickPick" Content="Pick" Width="58" />
+              </StackPanel>
+
+              <StackPanel x:Name="StepDragPanel" Spacing="6" IsVisible="False">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="From" Classes="unit" Margin="0,0,2,0" />
+                  <NumericUpDown x:Name="StepDragFromX" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                  <NumericUpDown x:Name="StepDragFromY" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                  <Button x:Name="StepDragFromPick" Content="Pick" Width="58" />
+                  <ComboBox x:Name="StepDragButtonBox" Width="88" SelectedIndex="0" Margin="8,0,0,0">
+                    <ComboBoxItem>Left</ComboBoxItem>
+                    <ComboBoxItem>Right</ComboBoxItem>
+                    <ComboBoxItem>Middle</ComboBoxItem>
+                  </ComboBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="To" Classes="unit" Margin="0,0,2,0" />
+                  <NumericUpDown x:Name="StepDragToX" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                  <NumericUpDown x:Name="StepDragToY" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                  <Button x:Name="StepDragToPick" Content="Pick" Width="58" />
+                  <TextBlock Text="over" Classes="unit" Margin="8,0,2,0" />
+                  <NumericUpDown x:Name="StepDragDuration" Width="80" Minimum="10" Maximum="60000" Value="400"
+                                 Increment="50" FormatString="0" />
+                  <TextBlock Text="ms" Classes="unit" />
+                </StackPanel>
+              </StackPanel>
+
+              <StackPanel x:Name="StepKeyPanel" Spacing="6" IsVisible="False">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <Border x:Name="StepKeyCapture" Classes="keyCapture" Focusable="True" MinWidth="150">
+                    <TextBlock x:Name="StepKeyCaptureText" Text="Click here, then press a key"
+                               HorizontalAlignment="Center" Opacity="0.6" />
+                  </Border>
+                  <CheckBox x:Name="StepModCtrl" Content="Ctrl" />
+                  <CheckBox x:Name="StepModShift" Content="Shift" />
+                  <CheckBox x:Name="StepModAlt" Content="Alt" />
+                  <CheckBox x:Name="StepModMeta" Content="Win" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="Hold" Classes="unit" Margin="0,0,2,0" />
+                  <NumericUpDown x:Name="StepKeyHold" Width="80" Minimum="0" Maximum="10000" Value="0"
+                                 Increment="10" FormatString="0" />
+                  <TextBlock Text="ms" Classes="unit" />
+                </StackPanel>
+              </StackPanel>
+
+              <StackPanel x:Name="StepWaitPanel" Orientation="Horizontal" Spacing="6" IsVisible="False">
+                <NumericUpDown x:Name="StepWaitMs" Width="100" Minimum="1" Maximum="600000" Value="500"
+                               Increment="100" FormatString="0" />
+                <TextBlock Text="ms" Classes="unit" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
+    <!-- ============================================================ timing -->
     <StackPanel Spacing="2">
-      <TextBlock Text="Timing" Classes="sectionTitle" />
+      <TextBlock x:Name="TimingTitle" Text="Timing" Classes="sectionTitle" />
       <Border x:Name="TimingCard" Classes="card">
         <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
           <TextBlock Grid.Row="0" Grid.Column="0" Text="Every:" Classes="label" />
@@ -117,12 +267,13 @@
                          IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0" />
             <RadioButton x:Name="RepeatLimited" GroupName="Repeat" VerticalAlignment="Center" Margin="0,0,6,0" />
             <NumericUpDown x:Name="RepeatCount" Width="104" Minimum="1" Maximum="10000000" Value="10" FormatString="0" />
-            <TextBlock Text="times" Classes="unit" />
+            <TextBlock x:Name="RepeatUnit" Text="times" Classes="unit" />
           </StackPanel>
         </Grid>
       </Border>
     </StackPanel>
 
+    <!-- =========================================================== options -->
     <StackPanel Spacing="2">
       <TextBlock Text="Options" Classes="sectionTitle" />
       <Border x:Name="OptionsCard" Classes="card">

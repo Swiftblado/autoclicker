@@ -3,7 +3,9 @@
 A small, portable auto clicker and key presser for **Windows, macOS and Linux**. One app, nothing to install: download the file for your computer and open it.
 
 - **Mouse clicks**: left, right or middle button, single or double click, at the cursor or at a fixed spot (use **Pick** to grab a spot).
+- **Mouse drags**: hold a button down and glide from one point to another over a set time.
 - **Key presses**: any key, optionally with Ctrl, Shift, Alt/Option or Win/Cmd/Super, and a set hold time.
+- **Macros**: record what you do and replay it, or build a sequence by hand — clicks, drags, key presses and waits. Reorder or delete steps, and save macros as `.json` files to reuse later.
 - **Timing**: an interval from 1 ms up to 24 hours, optional random variation (±ms), and either repeat until stopped or a set number of times.
 - **Global hotkey**: F6 by default (F1–F12 selectable) starts and stops it from any window.
 - Settings are remembered between runs.
@@ -33,11 +35,23 @@ Get the file for your machine from the [latest release](https://github.com/Swift
 
 Clicking **Start** instead counts down 3 seconds first, so you can switch to the target window before it begins.
 
+### Macros
+
+Pick **Macro** from the dropdown, then either:
+
+- **Record**: press **Record**, wait for the 2-second countdown, do the thing, then press **F6** to finish. What you did is added to the list as steps. The key you use to stop isn't recorded.
+- **Build by hand**: choose a step type under **Add step**, fill in the details (**Pick** grabs a screen position after a countdown) and press **Add**. Select a step to move, delete or **Replace** it.
+
+Recording keeps the shape of what you did rather than a literal trace: a press and release in one spot becomes a click, a press and release apart becomes a drag in a straight line between them, a key with modifiers held becomes one step, and the pauses in between become waits. Cursor movements on their own aren't recorded, since every click and drag carries its own coordinates.
+
+**Save...** and **Open...** keep macros as `.json` files (in `Macros` next to the settings file by default). Whatever is in the list is remembered between runs, and the **Repeat the macro** section controls how often the whole sequence replays.
+
 ## Platform notes
 
 - **Wayland (Linux):** Wayland deliberately stops apps from sending input to other apps, and there's no portal for it yet, so Auto Clicker needs an Xorg session. Pick "Ubuntu on Xorg" (or your desktop's X11 option) at the login screen. The app says so on screen if it detects Wayland.
 - **Elevated windows (Windows):** Windows blocks non-admin apps from sending input into programs running as administrator. Right-click the `.exe` and choose **Run as administrator** to automate those.
 - **Hotkey conflicts:** if another app already owns the hotkey, the app says so in the status line; pick a different F-key in **Options**.
+- **Recording permissions:** watching input is a separate privilege from sending it. macOS covers both with the Accessibility permission above. Linux recording needs the X server's RECORD extension, which most distributions ship enabled.
 
 ## Build from source
 
@@ -59,15 +73,26 @@ dotnet publish src/AutoClicker/AutoClicker.csproj -c Release -r linux-x64 \
 
 ```
 src/AutoClicker/
-  Core/      Runner.cs (timing loop), Settings.cs, InputActions.cs
+  Core/      Runner.cs (timing loop), Settings.cs, InputActions.cs,
+             Macro.cs + MacroStep.cs + MacroAction.cs (macros)
   Input/     one backend per OS, behind IInputBackend:
              Windows SendInput · macOS CGEvent · Linux XTest
   Hotkeys/   global hotkey per OS:
              RegisterHotKey · Carbon RegisterEventHotKey · X11 XGrabKey
+  Recording/ input capture per OS, behind IInputRecorder:
+             Windows hooks · macOS CGEventTap · Linux XRecord,
+             plus RecordingCompressor.cs (raw events -> steps)
   Views/     MainWindow.axaml — the whole UI
 packaging/   macOS .app bundling, Linux .desktop + installer, icons
 ```
 
 ## Status
 
-The Windows build is tested by hand: clicks and key presses land where they should, at the interval set. The macOS and Linux builds compile and start on real runners in CI, but nobody has clicked through their UIs yet — please [open an issue](https://github.com/Swiftblado/autoclicker/issues) if something there misbehaves.
+On Windows, clicks, drags, key presses and macro playback are tested: the right events arrive, at the right places, at the interval set. The step-building logic that turns a recording into steps is covered by tests too.
+
+Two things are **not** verified, so treat them as first drafts:
+
+- **Recording real input.** The capture path can only be exercised by a person actually using the mouse and keyboard, which a test can't fake — synthetic input is deliberately ignored so playback never records itself.
+- **The macOS and Linux builds** compile and start on real runners in CI, but nobody has used their UIs.
+
+Please [open an issue](https://github.com/Swiftblado/autoclicker/issues) if something misbehaves.

@@ -18,8 +18,12 @@ Nothing to install — each download is the whole app.
 **What it does**
 
 - Mouse: left, right or middle button, single or double click, at the cursor or a fixed spot
+- Drags: hold a button and glide between two points over a set time
 - Keyboard: any key, with Ctrl/Shift/Alt/Cmd, and a set hold time
+- Macros: record what you do and replay it, or build a sequence of clicks, drags, keys and waits by hand — saved and reopened as `.json` files
 - Interval from 1 ms to 24 hours, optional random variation, repeat forever or a set number of times
 - A global start/stop hotkey (F6 by default) that works from any window
+
+Recording real input is new and has only been tested on Windows by way of its building blocks — if it misbehaves on your system, please open an issue.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

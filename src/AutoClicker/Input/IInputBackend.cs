@@ -20,6 +20,10 @@ public interface IInputBackend : IDisposable
     string? UnavailableReason { get; }
 
     void SendClick(ClickButton button, int clickCount);
+
+    /// <summary>Press or release a mouse button on its own — the halves of a drag.</summary>
+    void SendMouseButton(ClickButton button, bool down);
+
     void SendKey(Key key, bool down);
     PixelPoint GetCursorPosition();
     void SetCursorPosition(PixelPoint point);
@@ -41,6 +45,7 @@ sealed class UnsupportedInputBackend : IInputBackend
     public bool IsAvailable => false;
     public string UnavailableReason => "This operating system isn't supported.";
     public void SendClick(ClickButton button, int clickCount) { }
+    public void SendMouseButton(ClickButton button, bool down) { }
     public void SendKey(Key key, bool down) { }
     public PixelPoint GetCursorPosition() => default;
     public void SetCursorPosition(PixelPoint point) { }

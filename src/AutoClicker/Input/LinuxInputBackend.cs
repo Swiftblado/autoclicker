@@ -62,6 +62,19 @@ sealed class LinuxInputBackend : IInputBackend
         X11.XFlush(display);
     }
 
+    public void SendMouseButton(ClickButton button, bool down)
+    {
+        if (!IsAvailable) return;
+        uint x11Button = button switch
+        {
+            ClickButton.Right => 3u,
+            ClickButton.Middle => 2u,
+            _ => 1u
+        };
+        XTest.XTestFakeButtonEvent(display, x11Button, down, 0);
+        X11.XFlush(display);
+    }
+
     public void SendKey(Key key, bool down)
     {
         if (!IsAvailable || !KeyMap.TryGet(key, out var codes)) return;

@@ -9,6 +9,7 @@ namespace AutoClicker.Core;
 public sealed class Runner
 {
     Thread? thread;
+    CancellationTokenSource? cancellation;
     volatile bool stopRequested;
     long count;
 
@@ -23,8 +24,10 @@ public sealed class Runner
     {
         Stop();
         stopRequested = false;
+        cancellation = new CancellationTokenSource();
+        var cancel = cancellation.Token;
         Interlocked.Exchange(ref count, 0);
-        thread = new Thread(() => Loop(action, intervalMs, jitterMs, repeat))
+        thread = new Thread(() => Loop(action, intervalMs, jitterMs, repeat, cancel))
         {
             IsBackground = true,
             Priority = ThreadPriority.AboveNormal,
@@ -36,12 +39,14 @@ public sealed class Runner
     public void Stop()
     {
         stopRequested = true;
+        // A macro can be mid-sequence; the token lets it abandon its remaining steps.
+        try { cancellation?.Cancel(); } catch (ObjectDisposedException) { }
         var t = thread;
         if (t != null && t != Thread.CurrentThread)
-            t.Join(1000);
+            t.Join(2000);
     }
 
-    void Loop(IInputAction action, double intervalMs, int jitterMs, long repeat)
+    void Loop(IInputAction action, double intervalMs, int jitterMs, long repeat, CancellationToken cancel)
     {
         // Windows' default timer resolution is ~15 ms, too coarse for short intervals.
         bool raisedTimerResolution = OperatingSystem.IsWindows() && WinMm.timeBeginPeriod(1) == 0;
@@ -53,7 +58,8 @@ public sealed class Runner
 
             while (!stopRequested)
             {
-                action.Perform();
+                action.Perform(cancel);
+                if (stopRequested) break;
                 long done = Interlocked.Increment(ref count);
                 if (repeat > 0 && done >= repeat) break;
 

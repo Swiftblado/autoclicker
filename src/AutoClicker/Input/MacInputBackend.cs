@@ -20,10 +20,16 @@ sealed class MacInputBackend : IInputBackend
     const uint kCGHIDEventTap = 0;
     const int kCGEventSourceStateHIDSystemState = 1;
     const uint kCGMouseEventClickState = 1;
+    const uint kCGEventSourceUserData = 42;
+
+    /// <summary>Stamped on every event we post so the recorder can tell ours from the user's.</summary>
+    internal const long SyntheticMarker = 0x4155434C;   // 'AUCL'
 
     const uint kCGEventLeftMouseDown = 1, kCGEventLeftMouseUp = 2;
     const uint kCGEventRightMouseDown = 3, kCGEventRightMouseUp = 4;
-    const uint kCGEventOtherMouseDown = 25, kCGEventOtherMouseUp = 26;
+    const uint kCGEventMouseMoved = 5;
+    const uint kCGEventLeftMouseDragged = 6, kCGEventRightMouseDragged = 7;
+    const uint kCGEventOtherMouseDown = 25, kCGEventOtherMouseUp = 26, kCGEventOtherMouseDragged = 27;
 
     const ulong kCGEventFlagMaskShift = 0x00020000;
     const ulong kCGEventFlagMaskControl = 0x00040000;
@@ -32,6 +38,7 @@ sealed class MacInputBackend : IInputBackend
 
     readonly IntPtr source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
     ulong flags;
+    ClickButton? heldButton;
 
     public bool IsAvailable => AXIsProcessTrusted();
 
@@ -57,6 +64,22 @@ sealed class MacInputBackend : IInputBackend
         }
     }
 
+    public void SendMouseButton(ClickButton button, bool down)
+    {
+        (uint type, uint macButton) = (button, down) switch
+        {
+            (ClickButton.Right, true) => (kCGEventRightMouseDown, 1u),
+            (ClickButton.Right, false) => (kCGEventRightMouseUp, 1u),
+            (ClickButton.Middle, true) => (kCGEventOtherMouseDown, 2u),
+            (ClickButton.Middle, false) => (kCGEventOtherMouseUp, 2u),
+            (_, true) => (kCGEventLeftMouseDown, 0u),
+            (_, false) => (kCGEventLeftMouseUp, 0u)
+        };
+
+        heldButton = down ? button : null;
+        PostMouse(type, CurrentLocation(), macButton, 1);
+    }
+
     public void SendKey(Key key, bool down)
     {
         if (!KeyMap.TryGet(key, out var codes)) return;
@@ -79,6 +102,7 @@ sealed class MacInputBackend : IInputBackend
         var evt = CGEventCreateKeyboardEvent(source, codes.MacKeyCode, down);
         if (evt == IntPtr.Zero) return;
         CGEventSetFlags(evt, flags);
+        CGEventSetIntegerValueField(evt, kCGEventSourceUserData, SyntheticMarker);
         CGEventPost(kCGHIDEventTap, evt);
         CFRelease(evt);
     }
@@ -91,7 +115,23 @@ sealed class MacInputBackend : IInputBackend
 
     public void SetCursorPosition(PixelPoint point)
     {
-        CGWarpMouseCursorPosition(new CGPoint { X = point.X, Y = point.Y });
+        var target = new CGPoint { X = point.X, Y = point.Y };
+
+        // Warping doesn't generate the drag events apps listen for, so while a button is
+        // held down we post a *MouseDragged event instead — that's what makes drags work.
+        if (heldButton is { } button)
+        {
+            (uint type, uint macButton) = button switch
+            {
+                ClickButton.Right => (kCGEventRightMouseDragged, 1u),
+                ClickButton.Middle => (kCGEventOtherMouseDragged, 2u),
+                _ => (kCGEventLeftMouseDragged, 0u)
+            };
+            PostMouse(type, target, macButton, 1);
+            return;
+        }
+
+        CGWarpMouseCursorPosition(target);
         // Re-link the hardware mouse to the cursor; warping briefly detaches it.
         CGAssociateMouseAndMouseCursorPosition(true);
     }
@@ -106,6 +146,7 @@ sealed class MacInputBackend : IInputBackend
         var evt = CGEventCreateMouseEvent(source, type, at, button);
         if (evt == IntPtr.Zero) return;
         CGEventSetIntegerValueField(evt, kCGMouseEventClickState, clickState);
+        CGEventSetIntegerValueField(evt, kCGEventSourceUserData, SyntheticMarker);
         CGEventSetFlags(evt, flags);
         CGEventPost(kCGHIDEventTap, evt);
         CFRelease(evt);
