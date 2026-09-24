@@ -11,7 +11,9 @@ repo_root=$(cd "$(dirname "$0")/../.." && pwd)
 rm -rf "$app_path"
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 
-cp -R "$publish_dir"/. "$app_path/Contents/MacOS/"
+# Single-file publish: the executable is the whole app. Leave the .pdb behind;
+# a non-code file in Contents/MacOS breaks the bundle's signature.
+cp "$publish_dir/AutoClicker" "$app_path/Contents/MacOS/"
 chmod +x "$app_path/Contents/MacOS/AutoClicker"
 
 iconutil -c icns "$repo_root/packaging/icons/AutoClicker.iconset" \
@@ -19,5 +21,11 @@ iconutil -c icns "$repo_root/packaging/icons/AutoClicker.iconset" \
 
 sed "s/__VERSION__/$version/g" "$repo_root/packaging/macos/Info.plist" \
     > "$app_path/Contents/Info.plist"
+
+# Ad-hoc sign the whole bundle. Without a bundle signature, Apple silicon Macs
+# report a downloaded app as "damaged" and offer no way to open it. Ad-hoc isn't
+# Apple-notarized, so Gatekeeper still asks once, but users can approve it.
+codesign --force --deep --sign - "$app_path"
+codesign --verify --deep --strict --verbose=2 "$app_path"
 
 echo "Built $app_path"

@@ -24,7 +24,7 @@ jobs:
           - os: macos-latest
             rid: osx-arm64
             artifact: AutoClicker-macos-arm64
-          - os: macos-latest
+          - os: macos-15-intel
             rid: osx-x64
             artifact: AutoClicker-macos-x64
 
@@ -62,10 +62,10 @@ jobs:
           echo "App stayed running under Xvfb."
 
       # macOS has no `timeout` (that's GNU coreutils), so run it in the background
-      # and check it's still alive. The x64 build is skipped: it would need Rosetta
-      # on these arm64 runners.
+      # and check it's still alive. The x64 build runs on an Intel runner so it's
+      # tested natively.
       - name: Smoke test (macOS)
-        if: runner.os == 'macOS' && matrix.rid == 'osx-arm64'
+        if: runner.os == 'macOS'
         run: |
           ./publish/AutoClicker &
           pid=$!
