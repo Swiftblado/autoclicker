@@ -24,7 +24,7 @@ Get the file for your machine from the [latest release](https://github.com/Swift
 ### First run
 
 - **Windows** — SmartScreen warns about unsigned apps. Click **More info → Run anyway**.
-- **macOS** — unzip and drag the app to Applications, then open it. It isn't notarized by Apple, so the first time macOS refuses: go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Auto Clicker (on macOS 14 and older, right-clicking the app and choosing **Open** also works). If macOS still won't open it, run `xattr -cr /Applications/AutoClicker.app` in Terminal and try again. macOS then needs Accessibility permission: **System Settings → Privacy & Security → Accessibility**, switch Auto Clicker on, then quit and reopen the app. No app can send clicks or keys without that permission; Auto Clicker shows a banner until it's granted.
+- **macOS** — unzip and drag the app to Applications, then open it. It isn't notarized by Apple, so the first time macOS refuses: go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Auto Clicker (on macOS 14 and older, right-clicking the app and choosing **Open** also works). macOS then needs Accessibility permission: **System Settings → Privacy & Security → Accessibility**, switch Auto Clicker on, then quit and reopen the app. No app can send clicks or keys without that permission; Auto Clicker shows a banner until it's granted.
 - **Linux** — unpack, then either run `./install.sh` (adds it to your applications menu) or run `./AutoClicker` directly. Needs an **Xorg** session and `libX11`/`libXtst` (installed by default on most desktops).
 
 ## Usage

@@ -12,7 +12,7 @@ Nothing to install — each download is the whole app.
 **First run on each system**
 
 - **Windows:** SmartScreen warns about unsigned apps. Click **More info → Run anyway**.
-- **macOS:** unzip, drag the app to Applications and open it. It isn't notarized by Apple, so the first time go to **System Settings → Privacy & Security** and click **Open Anyway** (on macOS 14 and older, right-click the app → **Open** also works). If it still won't open, run `xattr -cr /Applications/AutoClicker.app` in Terminal. macOS also asks for Accessibility permission: **System Settings → Privacy & Security → Accessibility**, switch Auto Clicker on, then quit and reopen it. Nothing can send clicks without that permission.
+- **macOS:** unzip, drag the app to Applications and open it. It isn't notarized by Apple, so the first time go to **System Settings → Privacy & Security** and click **Open Anyway** (on macOS 14 and older, right-click the app → **Open** also works). macOS also asks for Accessibility permission: **System Settings → Privacy & Security → Accessibility**, switch Auto Clicker on, then quit and reopen it. Nothing can send clicks without that permission.
 - **Linux:** unpack and run `./install.sh`, or just run `./AutoClicker`. Requires an **Xorg** session; Wayland blocks apps from sending input to other windows.
 
 **What it does**
