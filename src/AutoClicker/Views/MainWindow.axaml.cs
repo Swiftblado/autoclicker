@@ -9,6 +9,7 @@ using AutoClicker.Hotkeys;
 using AutoClicker.Input;
 using AutoClicker.Notifications;
 using AutoClicker.Recording;
+using AutoClicker.Updates;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -58,6 +59,9 @@ public partial class MainWindow : Window
     MacroAction? runningMacro;
     IDisposable? runActivity;
     bool lagSlowed;
+    UpdateInfo? availableUpdate;
+    bool checkingForUpdate;
+    double? updateProgress;   // null when no install is in progress
     Key chosenKey = Key.None;
     Key stepKey = Key.None;
     int countdown;
@@ -118,6 +122,10 @@ public partial class MainWindow : Window
         StepClearButton.Click += (_, _) => ClearSteps();
         MacroOpenButton.Click += async (_, _) => await OpenMacroAsync();
         MacroSaveButton.Click += async (_, _) => await SaveMacroAsync();
+        UpdateButton.Click += async (_, _) => await OnUpdateClickedAsync();
+        OpenAccessibilityButton.Click += (_, _) =>
+            Updater.OpenInBrowser("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
+        VersionText.Text = AppVersion.Display;
 
         KeyCapture.AddHandler(KeyDownEvent, OnCaptureKeyDown, RoutingStrategies.Tunnel);
         KeyCapture.PointerPressed += (_, _) => KeyCapture.Focus();
@@ -146,6 +154,7 @@ public partial class MainWindow : Window
         base.OnOpened(e);
         RegisterHotkey();
         UpdateControls();
+        if (AppVersion.IsUpdatable) _ = CheckForUpdateAsync(quiet: true);
     }
 
     // ---------------------------------------------------------------- state
@@ -165,8 +174,13 @@ public partial class MainWindow : Window
     void ShowBackendWarning()
     {
         wasAvailable = backend.IsAvailable;
-        WarningText.Text = backend.UnavailableReason;
+        WarningText.Text = Program.JustUpdated && OperatingSystem.IsMacOS()
+            ? "Auto Clicker was just updated, and macOS ties the Accessibility permission to the exact copy " +
+              "of the app, so it needs turning on again. In Privacy & Security > Accessibility, switch Auto Clicker " +
+              "off and back on (if that doesn't work, select it, remove it with −, then add it again), then quit and reopen the app."
+            : backend.UnavailableReason;
         WarningBar.IsVisible = !wasAvailable;
+        OpenAccessibilityButton.IsVisible = !wasAvailable && OperatingSystem.IsMacOS();
     }
 
     void UpdateControls()
@@ -210,6 +224,12 @@ public partial class MainWindow : Window
         StepDragPanel.IsVisible = StepTypeBox.SelectedIndex == 1;
         StepKeyPanel.IsVisible = StepTypeBox.SelectedIndex == 2;
         StepWaitPanel.IsVisible = StepTypeBox.SelectedIndex == 3;
+
+        UpdateButton.IsEnabled = AppVersion.IsUpdatable && !checkingForUpdate && updateProgress == null;
+        UpdateButton.Content = updateProgress is { } fraction ? "Updating… " + (int)(fraction * 100) + "%"
+            : checkingForUpdate ? "Checking…"
+            : availableUpdate != null ? "Update to v" + AppVersion.Format(availableUpdate.Version)
+            : "Check for updates";
 
         StartButton.IsEnabled = !busy && backend.IsAvailable;
         StopButton.IsEnabled = IsBusy;
@@ -740,6 +760,120 @@ public partial class MainWindow : Window
     {
         try { macro.Save(CurrentMacroPath); }
         catch (Exception) { /* the working copy is a convenience; Save... reports real failures */ }
+    }
+
+    // ---------------------------------------------------------------- updates
+
+    /// <summary>Asks GitHub for a newer release. Quiet mode (the startup check) reports nothing on failure.</summary>
+    async System.Threading.Tasks.Task CheckForUpdateAsync(bool quiet)
+    {
+        if (checkingForUpdate) return;
+        checkingForUpdate = true;
+        UpdateControls();
+        try
+        {
+            availableUpdate = await Updater.CheckAsync();
+            if (!quiet)
+                transientMessage = availableUpdate == null
+                    ? "You're on the latest version (" + AppVersion.Display + ")."
+                    : null;
+        }
+        catch (Exception ex)
+        {
+            if (!quiet) transientMessage = "Couldn't check for updates: " + ex.Message;
+        }
+        finally
+        {
+            checkingForUpdate = false;
+            UpdateControls();
+        }
+    }
+
+    async System.Threading.Tasks.Task OnUpdateClickedAsync()
+    {
+        if (availableUpdate == null)
+        {
+            await CheckForUpdateAsync(quiet: false);
+            if (availableUpdate == null) return;
+        }
+
+        var update = availableUpdate;
+        string from = AppVersion.Display;
+        string to = "v" + AppVersion.Format(update.Version);
+        if (!await ConfirmAsync("Update Auto Clicker", "Update from " + from + " to " + to + "?",
+                "Auto Clicker will download the update, then restart. Your settings and macros are kept.",
+                "Update", "Not now"))
+            return;
+
+        updateProgress = 0;
+        transientMessage = "Downloading " + to + "…";
+        UpdateControls();
+        try
+        {
+            var progress = new Progress<double>(fraction =>
+            {
+                updateProgress = fraction;
+                UpdateControls();
+            });
+            await Updater.InstallAsync(update, progress);
+            transientMessage = "Restarting into " + to + "…";
+            UpdateControls();
+            Close();   // the new copy is waiting for this one to exit
+        }
+        catch (UpdateBlockedException ex)
+        {
+            transientMessage = ex.Message + " Opening the download page instead.";
+            Updater.OpenInBrowser(ex.PageUrl);
+        }
+        catch (Exception ex)
+        {
+            transientMessage = "The update failed: " + ex.Message;
+        }
+        finally
+        {
+            updateProgress = null;
+            UpdateControls();
+        }
+    }
+
+    /// <summary>A small modal yes/no box; Avalonia has no built-in message box.</summary>
+    async System.Threading.Tasks.Task<bool> ConfirmAsync(string title, string heading, string detail, string yes, string no)
+    {
+        var yesButton = new Button { Content = yes, MinWidth = 90, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, IsDefault = true };
+        yesButton.Classes.Add("accent");
+        var noButton = new Button { Content = no, MinWidth = 90, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, IsCancel = true };
+
+        var dialog = new Window
+        {
+            Title = title,
+            Icon = Icon,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            CanResize = false,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 12,
+                Width = 360,
+                Children =
+                {
+                    new TextBlock { Text = heading, FontWeight = Avalonia.Media.FontWeight.SemiBold, FontSize = 15, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                    new TextBlock { Text = detail, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Opacity = 0.8 },
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Margin = new Thickness(0, 6, 0, 0),
+                        Children = { yesButton, noButton }
+                    }
+                }
+            }
+        };
+        yesButton.Click += (_, _) => dialog.Close(true);
+        noButton.Click += (_, _) => dialog.Close(false);
+        return await dialog.ShowDialog<bool>(this);
     }
 
     // ---------------------------------------------------------------- pick a point

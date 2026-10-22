@@ -35,10 +35,16 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Tagged builds are releases: stamp the tag's version and let them update themselves.
+      # Everything else stays a development build that never replaces itself.
       - name: Publish
         shell: bash
         run: |
-          dotnet publish src/AutoClicker/AutoClicker.csproj \
+          release_flags=""
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            release_flags="-p:Version=${GITHUB_REF_NAME#v} -p:UpdatableBuild=true"
+          fi
+          dotnet publish src/AutoClicker/AutoClicker.csproj $release_flags \
             --configuration Release \
             --runtime ${{ matrix.rid }} \
             --self-contained true \

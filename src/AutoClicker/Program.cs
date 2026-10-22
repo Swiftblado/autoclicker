@@ -1,14 +1,22 @@
 using System;
 using System.Threading;
 using Avalonia;
+using AutoClicker.Updates;
 
 namespace AutoClicker;
 
 internal static class Program
 {
+    /// <summary>True when this launch is the new copy started by an in-app update.</summary>
+    public static bool JustUpdated { get; private set; }
+
     [STAThread]
     public static void Main(string[] args)
     {
+        // Started by an update: let the old copy finish exiting first, or the single-instance
+        // check below would see it and quit.
+        JustUpdated = Updater.CleanUpAfterUpdate(args);
+
         Mutex? singleInstance = null;
         try
         {

@@ -28,4 +28,9 @@
     <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
 
+  <!-- CI sets UpdatableBuild=true on release builds; only those may update themselves. -->
+  <ItemGroup Condition="'$(UpdatableBuild)' == 'true'">
+    <AssemblyMetadata Include="UpdatableBuild" Value="true" />
+  </ItemGroup>
+
 </Project>

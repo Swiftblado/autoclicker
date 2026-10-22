@@ -12,7 +12,10 @@
     <!-- Shown when the OS won't let us send input (macOS permission, Wayland, missing libs). -->
     <Border x:Name="WarningBar" IsVisible="False" CornerRadius="6" Padding="12,10"
             Background="#33D97706" BorderBrush="#D97706" BorderThickness="1">
-      <TextBlock x:Name="WarningText" TextWrapping="Wrap" />
+      <StackPanel Spacing="8">
+        <TextBlock x:Name="WarningText" TextWrapping="Wrap" />
+        <Button x:Name="OpenAccessibilityButton" Content="Open Accessibility settings" IsVisible="False" />
+      </StackPanel>
     </Border>
 
     <StackPanel Orientation="Horizontal" Spacing="10">
@@ -314,6 +317,10 @@
               <CheckBox x:Name="TopMostBox" Content="Keep window on top" />
               <CheckBox x:Name="LagCheckBox" Content="Slow down when lagging" IsChecked="True"
                         ToolTip.Tip="Watches for your computer or the app you're automating falling behind, slows down until it recovers, and sends a notification when it does." />
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button x:Name="UpdateButton" Content="Check for updates" MinWidth="150" />
+                <TextBlock x:Name="VersionText" Classes="unit" VerticalAlignment="Center" />
+              </StackPanel>
             </StackPanel>
           </Border>
         </StackPanel>

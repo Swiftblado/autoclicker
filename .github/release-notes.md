@@ -24,6 +24,7 @@ Nothing to install — each download is the whole app.
 - Interval from 1 ms to 24 hours, optional random variation, repeat forever or a set number of times
 - Lag protection: slows down automatically when your computer or the target app falls behind, with a notification, and speeds back up once it clears
 - A global start/stop hotkey (F6 by default) that works from any window
+- Updates itself: press **Update** under Options when a new version is out
 
 Recording real input is new and has only been tested on Windows by way of its building blocks — if it misbehaves on your system, please open an issue.
 

@@ -47,6 +47,14 @@ Recording keeps the shape of what you did rather than a literal trace: a press a
 
 **Save...** and **Open...** keep macros as `.json` files (in `Macros` next to the settings file by default). Whatever is in the list is remembered between runs, and the **Repeat the macro** section controls how often the whole sequence replays.
 
+### Updating
+
+The app checks GitHub for a newer release when it opens. If there is one, the button under **Options** reads **Update to v…**; press it, confirm, and Auto Clicker downloads the new version for your system, swaps it in and restarts. Settings and macros are kept. If it can't replace itself (for example the folder isn't writable, or on macOS it's still running from Downloads), it says why and opens the download page instead.
+
+On macOS, the Accessibility permission is tied to the exact copy of the app, so after an update you need to switch Auto Clicker off and back on under **System Settings → Privacy & Security → Accessibility**. The app shows a banner with a button that opens that page.
+
+Builds you make yourself are marked "development build" and don't update.
+
 ## Platform notes
 
 - **Wayland (Linux):** Wayland deliberately stops apps from sending input to other apps, and there's no portal for it yet, so Auto Clicker needs an Xorg session. Pick "Ubuntu on Xorg" (or your desktop's X11 option) at the login screen. The app says so on screen if it detects Wayland.
@@ -86,6 +94,7 @@ src/AutoClicker/
              plus RecordingCompressor.cs (raw events -> steps)
   Notifications/ system notifications per OS:
              Windows tray balloon · macOS osascript · Linux notify-send
+  Updates/   Updater.cs (download + swap per OS), AppVersion.cs
   Views/     MainWindow.axaml — the whole UI
 packaging/   macOS .app bundling, Linux .desktop + installer, icons
 ```
