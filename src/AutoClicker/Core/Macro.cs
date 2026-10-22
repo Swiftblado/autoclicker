@@ -69,6 +69,8 @@ public sealed class Macro
             {
                 if (step.Kind is StepKind.Wait or StepKind.Drag or StepKind.Key)
                     total += step.DurationMs;
+                else if (step.Kind == StepKind.Click)
+                    total += Math.Max(0, step.HoldMs) * Math.Max(1, step.ClickCount);
             }
             return total;
         }

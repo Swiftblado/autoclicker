@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Threading;
 using Avalonia;
 using Avalonia.Input;
 
@@ -13,7 +14,7 @@ sealed class WindowsInputBackend : IInputBackend
     public bool IsAvailable => true;
     public string? UnavailableReason => null;
 
-    public void SendClick(ClickButton button, int clickCount)
+    public void SendClick(ClickButton button, int clickCount, int holdMs)
     {
         (uint down, uint up) = button switch
         {
@@ -22,13 +23,24 @@ sealed class WindowsInputBackend : IInputBackend
             _ => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP)
         };
 
-        var inputs = new INPUT[clickCount * 2];
+        if (holdMs <= 0)
+        {
+            var inputs = new INPUT[clickCount * 2];
+            for (int i = 0; i < clickCount; i++)
+            {
+                inputs[i * 2] = MouseInput(down);
+                inputs[i * 2 + 1] = MouseInput(up);
+            }
+            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+            return;
+        }
+
         for (int i = 0; i < clickCount; i++)
         {
-            inputs[i * 2] = MouseInput(down);
-            inputs[i * 2 + 1] = MouseInput(up);
+            SendInput(1, [MouseInput(down)], Marshal.SizeOf<INPUT>());
+            Thread.Sleep(holdMs);
+            SendInput(1, [MouseInput(up)], Marshal.SizeOf<INPUT>());
         }
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
 
     public void SendMouseButton(ClickButton button, bool down)

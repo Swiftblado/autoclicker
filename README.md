@@ -2,12 +2,13 @@
 
 A small, portable auto clicker and key presser for **Windows, macOS and Linux**. One app, nothing to install: download the file for your computer and open it.
 
-- **Mouse clicks**: left, right or middle button, single or double click, at the cursor or at a fixed spot (use **Pick** to grab a spot).
+- **Mouse clicks**: left, right or middle button, single or double click, at the cursor or at a fixed spot (use **Pick** to grab a spot). A **full click** (the default) holds the button down for 20, 35 or 50 ms like a real press; a **half click** lets go instantly, like a light tap on a touchpad. Macro click steps have the same choice.
 - **Mouse drags**: hold a button down and glide from one point to another over a set time.
 - **Key presses**: any key, optionally with Ctrl, Shift, Alt/Option or Win/Cmd/Super, and a set hold time.
 - **Macros**: record what you do and replay it, or build a sequence by hand — clicks, drags, key presses and waits. Reorder or delete steps, and save macros as `.json` files to reuse later.
 - **Timing**: an interval from 1 ms up to 24 hours, optional random variation (±ms), and either repeat until stopped or a set number of times.
 - **Global hotkey**: F6 by default (F1–F12 selectable) starts and stops it from any window.
+- **Lag protection**: with **Slow down when lagging** on (the default), it watches for your computer or the app you're automating falling behind, halves the speed (and keeps halving while the lag lasts), then eases back to full speed after 3 seconds without lag. A system notification tells you when it slows down and when it's back to normal.
 - Settings are remembered between runs.
 
 ## Download
@@ -75,6 +76,7 @@ dotnet publish src/AutoClicker/AutoClicker.csproj -c Release -r linux-x64 \
 src/AutoClicker/
   Core/      Runner.cs (timing loop), Settings.cs, InputActions.cs,
              Macro.cs + MacroStep.cs + MacroAction.cs (macros)
+             LagGovernor.cs + LagMonitor.cs (slowing down for lag)
   Input/     one backend per OS, behind IInputBackend:
              Windows SendInput · macOS CGEvent · Linux XTest
   Hotkeys/   global hotkey per OS:
@@ -82,6 +84,8 @@ src/AutoClicker/
   Recording/ input capture per OS, behind IInputRecorder:
              Windows hooks · macOS CGEventTap · Linux XRecord,
              plus RecordingCompressor.cs (raw events -> steps)
+  Notifications/ system notifications per OS:
+             Windows tray balloon · macOS osascript · Linux notify-send
   Views/     MainWindow.axaml — the whole UI
 packaging/   macOS .app bundling, Linux .desktop + installer, icons
 ```

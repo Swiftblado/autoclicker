@@ -17,13 +17,14 @@ public interface IInputAction
 }
 
 public sealed class MouseClickAction(
-    IInputBackend backend, ClickButton button, int clickCount, bool useFixedPosition, PixelPoint position)
+    IInputBackend backend, ClickButton button, int clickCount, int holdMs, bool useFixedPosition,
+    PixelPoint position)
     : IInputAction
 {
     public void Perform(CancellationToken cancel)
     {
         if (useFixedPosition) backend.SetCursorPosition(position);
-        backend.SendClick(button, clickCount);
+        backend.SendClick(button, clickCount, holdMs);
     }
 }
 

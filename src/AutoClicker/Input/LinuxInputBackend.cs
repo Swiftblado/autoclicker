@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Threading;
 using Avalonia;
 using Avalonia.Input;
 
@@ -45,7 +46,7 @@ sealed class LinuxInputBackend : IInputBackend
     public bool IsAvailable => failure == null;
     public string? UnavailableReason => failure;
 
-    public void SendClick(ClickButton button, int clickCount)
+    public void SendClick(ClickButton button, int clickCount, int holdMs)
     {
         if (!IsAvailable) return;
         uint x11Button = button switch
@@ -57,6 +58,12 @@ sealed class LinuxInputBackend : IInputBackend
         for (int i = 0; i < clickCount; i++)
         {
             XTest.XTestFakeButtonEvent(display, x11Button, true, 0);
+            if (holdMs > 0)
+            {
+                // Flush the press on its own, or the X server sees both halves at once.
+                X11.XFlush(display);
+                Thread.Sleep(holdMs);
+            }
             XTest.XTestFakeButtonEvent(display, x11Button, false, 0);
         }
         X11.XFlush(display);

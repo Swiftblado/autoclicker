@@ -19,7 +19,11 @@ public interface IInputBackend : IDisposable
     /// <summary>Explains to the user what to do about <see cref="IsAvailable"/> being false.</summary>
     string? UnavailableReason { get; }
 
-    void SendClick(ClickButton button, int clickCount);
+    /// <summary>
+    /// Clicks <paramref name="clickCount"/> times. Each press is held for <paramref name="holdMs"/>
+    /// before release; 0 releases at once (a half click).
+    /// </summary>
+    void SendClick(ClickButton button, int clickCount, int holdMs);
 
     /// <summary>Press or release a mouse button on its own — the halves of a drag.</summary>
     void SendMouseButton(ClickButton button, bool down);
@@ -44,7 +48,7 @@ sealed class UnsupportedInputBackend : IInputBackend
 {
     public bool IsAvailable => false;
     public string UnavailableReason => "This operating system isn't supported.";
-    public void SendClick(ClickButton button, int clickCount) { }
+    public void SendClick(ClickButton button, int clickCount, int holdMs) { }
     public void SendMouseButton(ClickButton button, bool down) { }
     public void SendKey(Key key, bool down) { }
     public PixelPoint GetCursorPosition() => default;

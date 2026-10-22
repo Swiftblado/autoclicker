@@ -7,6 +7,7 @@ using System.Linq;
 using AutoClicker.Core;
 using AutoClicker.Hotkeys;
 using AutoClicker.Input;
+using AutoClicker.Notifications;
 using AutoClicker.Recording;
 using Avalonia;
 using Avalonia.Controls;
@@ -25,6 +26,9 @@ public partial class MainWindow : Window
     const int RecordCountdownSeconds = 2;
     const string CurrentMacroFile = "current.json";
 
+    /// <summary>How long the Windows tray icon lingers after the "back to full speed" notification.</summary>
+    static readonly TimeSpan TrayLingerTime = TimeSpan.FromSeconds(10);
+
     static readonly Key[] HotkeyChoices =
     [
         Key.F1, Key.F2, Key.F3, Key.F4, Key.F5, Key.F6,
@@ -36,11 +40,15 @@ public partial class MainWindow : Window
     readonly IInputRecorder recorder = InputRecorder.Create();
     readonly Runner runner = new();
     readonly Settings settings = Settings.Load();
+    readonly LagGovernor lagGovernor = new();
+    readonly LagMonitor lagMonitor;
+    readonly ISystemNotifier notifier;
 
     readonly DispatcherTimer uiTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     readonly DispatcherTimer countdownTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     readonly DispatcherTimer pickTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
     readonly DispatcherTimer recordCountdownTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    readonly DispatcherTimer trayHideTimer = new() { Interval = TrayLingerTime };
 
     readonly Macro macro = new();
     readonly ObservableCollection<string> stepRows = [];
@@ -48,6 +56,8 @@ public partial class MainWindow : Window
     readonly object recordLock = new();
 
     MacroAction? runningMacro;
+    IDisposable? runActivity;
+    bool lagSlowed;
     Key chosenKey = Key.None;
     Key stepKey = Key.None;
     int countdown;
@@ -66,14 +76,23 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        lagMonitor = new LagMonitor(lagGovernor, TargetProbe.Create());
+        notifier = SystemNotifier.Create(() => TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
+
         ModAlt.Content = StepModAlt.Content = KeyMap.AltName;
         ModMeta.Content = StepModMeta.Content = KeyMap.MetaName;
         HotkeyBox.ItemsSource = HotkeyChoices.Select(KeyMap.Name).ToList();
         StepList.ItemsSource = stepRows;
+        var holdChoices = ClickHold.ChoicesMs.Select(ms => ms + " ms").ToList();
+        HoldBox.ItemsSource = holdChoices;
+        StepHoldBox.ItemsSource = holdChoices;
+        HoldBox.SelectedIndex = StepHoldBox.SelectedIndex = Array.IndexOf(ClickHold.ChoicesMs, ClickHold.DefaultMs);
 
         ModeBox.SelectionChanged += (_, _) => { UpdateControls(); };
         StepTypeBox.SelectionChanged += (_, _) => UpdateControls();
         StepList.SelectionChanged += (_, _) => UpdateControls();
+        PressBox.SelectionChanged += (_, _) => UpdateControls();
+        StepPressBox.SelectionChanged += (_, _) => UpdateControls();
         PositionFixed.IsCheckedChanged += OnSettingChanged;
         PositionCursor.IsCheckedChanged += OnSettingChanged;
         RepeatForever.IsCheckedChanged += OnSettingChanged;
@@ -110,6 +129,8 @@ public partial class MainWindow : Window
         pickTimer.Tick += (_, _) => PickTick();
         recordCountdownTimer.Tick += (_, _) => RecordCountdownTick();
         recorder.Recorded += OnRecorded;
+        trayHideTimer.Tick += (_, _) => { trayHideTimer.Stop(); notifier.Hide(); };
+        lagMonitor.Changed += change => Dispatcher.UIThread.Post(() => OnLagChanged(change));
 
         LoadSettings();
         LoadCurrentMacro();
@@ -164,6 +185,8 @@ public partial class MainWindow : Window
         OptionsCard.IsEnabled = !busy;
 
         PositionX.IsEnabled = PositionY.IsEnabled = PickButton.IsEnabled = PositionFixed.IsChecked == true;
+        HoldLabel.IsVisible = HoldBox.IsVisible = PressBox.SelectedIndex == 0;
+        StepHoldLabel.IsVisible = StepHoldBox.IsVisible = StepPressBox.SelectedIndex == 0;
         RepeatCount.IsEnabled = RepeatLimited.IsChecked == true;
         RepeatUnit.Text = mode == AutomationMode.Macro ? "passes" : "times";
         TimingTitle.Text = mode == AutomationMode.Macro ? "Repeat the macro" : "Timing";
@@ -213,7 +236,7 @@ public partial class MainWindow : Window
         {
             wasRunning = running;
             lastCount = count;
-            if (!running) runningMacro = null;
+            if (!running) OnRunEnded();
             UpdateControls();
         }
         else if (running && Mode == AutomationMode.Macro)
@@ -237,7 +260,7 @@ public partial class MainWindow : Window
         else if (countdownTimer.IsEnabled)
             text = "Starting in " + countdown + "… switch to your target window.";
         else if (runner.IsRunning)
-            text = "Running · " + Counted(count) + "." + StepProgress() +
+            text = "Running · " + Counted(count) + "." + StepProgress() + LagNote() +
                    (hotkeyError == null ? " Press " + HotkeyName + " to stop." : "");
         else if (count > 0)
             text = "Stopped · " + Counted(count) + ".";
@@ -260,6 +283,13 @@ public partial class MainWindow : Window
             _ => count == 1 ? "pass" : "passes"
         };
         return count.ToString("N0", CultureInfo.CurrentCulture) + " " + noun;
+    }
+
+    string LagNote()
+    {
+        double multiplier = lagGovernor.Multiplier;
+        if (!lagSlowed || multiplier <= 1) return "";
+        return " Slowed " + multiplier.ToString("N0", CultureInfo.CurrentCulture) + "× for lag.";
     }
 
     string StepProgress()
@@ -302,7 +332,9 @@ public partial class MainWindow : Window
 
     void StartNow()
     {
-        var action = BuildAction();
+        bool lagCheck = LagCheckBox.IsChecked == true;
+        // With the lag check on, every send is timed: a slow one is a sign of lag.
+        var action = BuildAction(lagCheck ? new TimedInputBackend(backend, lagGovernor.ReportSend) : backend);
         if (action == null) { UpdateControls(); return; }
 
         double interval = (double)(Dec(Hours) * 3600000m + Dec(Minutes) * 60000m +
@@ -310,7 +342,12 @@ public partial class MainWindow : Window
         long repeat = RepeatLimited.IsChecked == true ? (long)Dec(RepeatCount) : 0;
         runningMacro = action as MacroAction;
         SaveSettings();
-        runner.Start(action, interval, (int)Dec(Jitter), repeat);
+        trayHideTimer.Stop();
+        notifier.Hide();
+        lagSlowed = false;
+        runActivity = RunActivity.Begin();
+        runner.Start(action, interval, (int)Dec(Jitter), repeat, lagCheck ? lagGovernor : null);
+        if (lagCheck) lagMonitor.Start();
         UpdateControls();
     }
 
@@ -318,11 +355,53 @@ public partial class MainWindow : Window
     {
         countdownTimer.Stop();
         runner.Stop();
-        runningMacro = null;
+        OnRunEnded();
         UpdateControls();
     }
 
-    IInputAction? BuildAction()
+    /// <summary>Tidies up after a run, whether it was stopped or finished its repeat count.</summary>
+    void OnRunEnded()
+    {
+        runningMacro = null;
+        lagMonitor.Stop();
+        runActivity?.Dispose();
+        runActivity = null;
+        if (lagSlowed)
+        {
+            // Nothing to recover from now; take the tray icon away rather than leave it behind.
+            lagSlowed = false;
+            trayHideTimer.Stop();
+            notifier.Hide();
+        }
+    }
+
+    void OnLagChanged(LagChange change)
+    {
+        if (!runner.IsRunning) return;   // posted just before the run ended
+
+        switch (change)
+        {
+            case LagChange.Slowed:
+                lagSlowed = true;
+                trayHideTimer.Stop();
+                notifier.Show("Auto Clicker slowed down",
+                    "Lag detected: " + lagGovernor.Reason + ". Running at half speed, and slower if it continues, until it clears.",
+                    NotificationKind.Warning);
+                break;
+
+            case LagChange.Recovered:
+                lagSlowed = false;
+                notifier.Show("Auto Clicker back to full speed", "The lag has cleared.", NotificationKind.Info);
+                trayHideTimer.Start();
+                break;
+        }
+        RefreshStatus();
+    }
+
+    IInputAction? BuildAction() => BuildAction(backend);
+
+    /// <param name="target">Where the action sends its input: the backend itself, or a wrapper round it.</param>
+    IInputAction? BuildAction(IInputBackend target)
     {
         validationMessage = null;
         transientMessage = null;
@@ -343,15 +422,16 @@ public partial class MainWindow : Window
         {
             case AutomationMode.Clicks:
                 return new MouseClickAction(
-                    backend,
+                    target,
                     (ClickButton)Math.Clamp(ButtonBox.SelectedIndex, 0, 2),
                     ClickTypeBox.SelectedIndex == 1 ? 2 : 1,
+                    ReadHoldMs(PressBox, HoldBox),
                     PositionFixed.IsChecked == true,
                     new PixelPoint((int)Dec(PositionX), (int)Dec(PositionY)));
 
             case AutomationMode.Drags:
                 return new DragAction(
-                    backend,
+                    target,
                     (ClickButton)Math.Clamp(DragButtonBox.SelectedIndex, 0, 2),
                     new PixelPoint((int)Dec(DragFromX), (int)Dec(DragFromY)),
                     new PixelPoint((int)Dec(DragToX), (int)Dec(DragToY)),
@@ -368,7 +448,7 @@ public partial class MainWindow : Window
                     validationMessage = "The key to press can't also be the start/stop key (" + HotkeyName + ").";
                     return null;
                 }
-                return new KeyPressAction(backend, chosenKey, ReadModifiers(ModCtrl, ModShift, ModAlt, ModMeta),
+                return new KeyPressAction(target, chosenKey, ReadModifiers(ModCtrl, ModShift, ModAlt, ModMeta),
                     (int)Dec(HoldMs));
 
             default:
@@ -377,9 +457,15 @@ public partial class MainWindow : Window
                     validationMessage = "The macro is empty. Record one, or add steps below.";
                     return null;
                 }
-                return new MacroAction(backend, macro);
+                return new MacroAction(target, macro);
         }
     }
+
+    /// <summary>Hold time picked in a Full/Half + hold pair of boxes; 0 for a half click.</summary>
+    static int ReadHoldMs(ComboBox press, ComboBox hold) =>
+        press.SelectedIndex == 1
+            ? ClickHold.HalfClickMs
+            : ClickHold.ChoicesMs[Math.Clamp(hold.SelectedIndex, 0, ClickHold.ChoicesMs.Length - 1)];
 
     static Modifiers ReadModifiers(CheckBox ctrl, CheckBox shift, CheckBox alt, CheckBox meta)
     {
@@ -488,7 +574,8 @@ public partial class MainWindow : Window
                 return MacroStep.MakeClick(
                     (ClickButton)Math.Clamp(StepClickButtonBox.SelectedIndex, 0, 2),
                     StepClickTypeBox.SelectedIndex == 1 ? 2 : 1,
-                    new PixelPoint((int)Dec(StepClickX), (int)Dec(StepClickY)));
+                    new PixelPoint((int)Dec(StepClickX), (int)Dec(StepClickY)),
+                    holdMs: ReadHoldMs(StepPressBox, StepHoldBox));
 
             case 1:
                 return MacroStep.MakeDrag(
@@ -771,6 +858,8 @@ public partial class MainWindow : Window
         SetIndex(ModeBox, settings.GetInt("Mode", 0), 4);
         SetIndex(ButtonBox, settings.GetInt("MouseButton", 0), 3);
         SetIndex(ClickTypeBox, settings.GetInt("ClickType", 0), 2);
+        SetIndex(PressBox, settings.GetInt("Press", 0), 2);
+        SetIndex(HoldBox, settings.GetInt("Hold", HoldBox.SelectedIndex), ClickHold.ChoicesMs.Length);
         PositionFixed.IsChecked = settings.GetBool("FixedPosition", false);
         PositionCursor.IsChecked = PositionFixed.IsChecked != true;
         SetValue(PositionX, settings.GetDecimal("X", 0));
@@ -803,6 +892,7 @@ public partial class MainWindow : Window
 
         SetIndex(HotkeyBox, settings.GetInt("Hotkey", 5), HotkeyChoices.Length);
         TopMostBox.IsChecked = settings.GetBool("TopMost", false);
+        LagCheckBox.IsChecked = settings.GetBool("LagCheck", true);
         Topmost = TopMostBox.IsChecked == true;
     }
 
@@ -811,6 +901,8 @@ public partial class MainWindow : Window
         settings.Set("Mode", ModeBox.SelectedIndex);
         settings.Set("MouseButton", ButtonBox.SelectedIndex);
         settings.Set("ClickType", ClickTypeBox.SelectedIndex);
+        settings.Set("Press", PressBox.SelectedIndex);
+        settings.Set("Hold", HoldBox.SelectedIndex);
         settings.Set("FixedPosition", PositionFixed.IsChecked == true);
         settings.Set("X", Dec(PositionX));
         settings.Set("Y", Dec(PositionY));
@@ -835,6 +927,7 @@ public partial class MainWindow : Window
         settings.Set("RepeatCount", Dec(RepeatCount));
         settings.Set("Hotkey", HotkeyBox.SelectedIndex);
         settings.Set("TopMost", TopMostBox.IsChecked == true);
+        settings.Set("LagCheck", LagCheckBox.IsChecked == true);
         settings.Save();
     }
 
@@ -843,8 +936,11 @@ public partial class MainWindow : Window
         countdownTimer.Stop();
         recordCountdownTimer.Stop();
         pickTimer.Stop();
+        trayHideTimer.Stop();
         uiTimer.Stop();
         runner.Stop();
+        OnRunEnded();
+        notifier.Dispose();
         recorder.Dispose();
         SaveSettings();
         SaveCurrentMacro();

@@ -34,6 +34,12 @@ public sealed class MacroStep
     public int FromX { get; set; }
     public int FromY { get; set; }
 
+    /// <summary>
+    /// Click only: how long each press is held, in ms. 0 is a half click. Macros saved before
+    /// this existed have no value, so they get the default full click.
+    /// </summary>
+    public int HoldMs { get; set; } = ClickHold.DefaultMs;
+
     // Drag / Move destination
     public int ToX { get; set; }
     public int ToY { get; set; }
@@ -48,11 +54,12 @@ public sealed class MacroStep
     [JsonIgnore] public PixelPoint From => new(FromX, FromY);
     [JsonIgnore] public PixelPoint To => new(ToX, ToY);
 
-    public static MacroStep MakeClick(ClickButton button, int clickCount, PixelPoint at, bool atCursor = false) =>
+    public static MacroStep MakeClick(ClickButton button, int clickCount, PixelPoint at, bool atCursor = false,
+        int holdMs = ClickHold.DefaultMs) =>
         new()
         {
             Kind = StepKind.Click, Button = button, ClickCount = clickCount,
-            AtCursor = atCursor, FromX = at.X, FromY = at.Y
+            AtCursor = atCursor, FromX = at.X, FromY = at.Y, HoldMs = holdMs
         };
 
     public static MacroStep MakeDrag(ClickButton button, PixelPoint from, PixelPoint to, int durationMs) =>
@@ -79,8 +86,10 @@ public sealed class MacroStep
         {
             case StepKind.Click:
                 string what = ClickCount > 1 ? "Double-click" : "Click";
+                if (HoldMs <= 0) what = "Half " + what.ToLowerInvariant();
                 string where = AtCursor ? "at the cursor" : Point(From);
-                return what + " " + Button.ToString().ToLowerInvariant() + " " + where;
+                string held = HoldMs > 0 ? ", held " + Time(HoldMs) : "";
+                return what + " " + Button.ToString().ToLowerInvariant() + " " + where + held;
 
             case StepKind.Drag:
                 return "Drag " + Button.ToString().ToLowerInvariant() + " " + Point(From) +

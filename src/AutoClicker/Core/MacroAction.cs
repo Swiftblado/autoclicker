@@ -59,7 +59,7 @@ public sealed class MacroAction : IInputAction
 
             case StepKind.Click:
                 if (!step.AtCursor) backend.SetCursorPosition(step.From);
-                backend.SendClick(step.Button, Math.Max(1, step.ClickCount));
+                backend.SendClick(step.Button, Math.Max(1, step.ClickCount), Math.Max(0, step.HoldMs));
                 break;
 
             case StepKind.Drag:

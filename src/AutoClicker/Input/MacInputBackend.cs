@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Threading;
 using Avalonia;
 using Avalonia.Input;
 
@@ -46,7 +47,7 @@ sealed class MacInputBackend : IInputBackend
         "macOS hasn't given this app permission to control your computer. Open System Settings > " +
         "Privacy & Security > Accessibility, switch Auto Clicker on, then quit and reopen the app.";
 
-    public void SendClick(ClickButton button, int clickCount)
+    public void SendClick(ClickButton button, int clickCount, int holdMs)
     {
         (uint downType, uint upType, uint macButton) = button switch
         {
@@ -60,6 +61,7 @@ sealed class MacInputBackend : IInputBackend
         {
             // Click state tells macOS this is the 1st, 2nd... click of a multi-click.
             PostMouse(downType, at, macButton, i);
+            if (holdMs > 0) Thread.Sleep(holdMs);
             PostMouse(upType, at, macButton, i);
         }
     }
