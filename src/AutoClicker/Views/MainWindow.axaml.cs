@@ -80,23 +80,37 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        lagMonitor = new LagMonitor(lagGovernor, TargetProbe.Create());
+        lagMonitor = new LagMonitor(lagGovernor, TargetProbe.Create(), ScreenProbe.Create, backend.GetCursorPosition);
         notifier = SystemNotifier.Create(() => TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
 
         ModAlt.Content = StepModAlt.Content = KeyMap.AltName;
         ModMeta.Content = StepModMeta.Content = KeyMap.MetaName;
         HotkeyBox.ItemsSource = HotkeyChoices.Select(KeyMap.Name).ToList();
         StepList.ItemsSource = stepRows;
-        var holdChoices = ClickHold.ChoicesMs.Select(ms => ms + " ms").ToList();
+        var holdChoices = ClickHold.ChoicesMs.Select(ms => ms + " ms").Append("Custom…").ToList();
         HoldBox.ItemsSource = holdChoices;
         StepHoldBox.ItemsSource = holdChoices;
         HoldBox.SelectedIndex = StepHoldBox.SelectedIndex = Array.IndexOf(ClickHold.ChoicesMs, ClickHold.DefaultMs);
+        HoldCustom.Maximum = StepHoldCustom.Maximum = ClickHold.MaxCustomMs;
+        HoldCustom.Value = StepHoldCustom.Value = ClickHold.DefaultMs;
+        foreach (var help in new[] { HoldHelp, StepHoldHelp })
+        {
+            ToolTip.SetTip(help, "What can be clicked this fast?");
+            help.Flyout = new Flyout
+            {
+                Content = new TextBlock { Text = ClickHold.HelpText, TextWrapping = Avalonia.Media.TextWrapping.Wrap, MaxWidth = 320 }
+            };
+        }
 
         ModeBox.SelectionChanged += (_, _) => { UpdateControls(); };
         StepTypeBox.SelectionChanged += (_, _) => UpdateControls();
         StepList.SelectionChanged += (_, _) => UpdateControls();
         PressBox.SelectionChanged += (_, _) => UpdateControls();
         StepPressBox.SelectionChanged += (_, _) => UpdateControls();
+        HoldBox.SelectionChanged += (_, _) => UpdateControls();
+        StepHoldBox.SelectionChanged += (_, _) => UpdateControls();
+        HoldCustom.ValueChanged += (_, _) => UpdateControls();
+        StepHoldCustom.ValueChanged += (_, _) => UpdateControls();
         PositionFixed.IsCheckedChanged += OnSettingChanged;
         PositionCursor.IsCheckedChanged += OnSettingChanged;
         RepeatForever.IsCheckedChanged += OnSettingChanged;
@@ -199,8 +213,8 @@ public partial class MainWindow : Window
         OptionsCard.IsEnabled = !busy;
 
         PositionX.IsEnabled = PositionY.IsEnabled = PickButton.IsEnabled = PositionFixed.IsChecked == true;
-        HoldLabel.IsVisible = HoldBox.IsVisible = PressBox.SelectedIndex == 0;
-        StepHoldLabel.IsVisible = StepHoldBox.IsVisible = StepPressBox.SelectedIndex == 0;
+        ShowHold(PressBox, HoldLabel, HoldBox, HoldCustomRow, HoldCustom, HoldHalfNote);
+        ShowHold(StepPressBox, StepHoldLabel, StepHoldBox, StepHoldCustomRow, StepHoldCustom, StepHoldHalfNote);
         RepeatCount.IsEnabled = RepeatLimited.IsChecked == true;
         RepeatUnit.Text = mode == AutomationMode.Macro ? "passes" : "times";
         TimingTitle.Text = mode == AutomationMode.Macro ? "Repeat the macro" : "Timing";
@@ -325,6 +339,8 @@ public partial class MainWindow : Window
     void BeginCountdown()
     {
         if (BuildAction() == null) { UpdateControls(); return; }
+        // Use the countdown to learn what the target looks like when it's keeping up.
+        if (LagCheckBox.IsChecked == true) lagMonitor.Start();
         // Started from the button, the first clicks or keys would land on this window,
         // so give the user a moment to switch to their target.
         countdown = StartCountdownSeconds;
@@ -366,8 +382,16 @@ public partial class MainWindow : Window
         notifier.Hide();
         lagSlowed = false;
         runActivity = RunActivity.Begin();
-        runner.Start(action, interval, (int)Dec(Jitter), repeat, lagCheck ? lagGovernor : null);
-        if (lagCheck) lagMonitor.Start();
+        // The lag monitor watches the target briefly before the first click (the Start button's
+        // countdown usually covers that already).
+        var warmUp = TimeSpan.Zero;
+        if (lagCheck)
+        {
+            if (!lagMonitor.IsRunning) lagMonitor.Start();
+            warmUp = LagMonitor.WarmUp - lagMonitor.WatchingFor;
+        }
+        else lagMonitor.Stop();
+        runner.Start(action, interval, (int)Dec(Jitter), repeat, lagCheck ? lagGovernor : null, warmUp);
         UpdateControls();
     }
 
@@ -445,7 +469,7 @@ public partial class MainWindow : Window
                     target,
                     (ClickButton)Math.Clamp(ButtonBox.SelectedIndex, 0, 2),
                     ClickTypeBox.SelectedIndex == 1 ? 2 : 1,
-                    ReadHoldMs(PressBox, HoldBox),
+                    ReadHoldMs(PressBox, HoldBox, HoldCustom),
                     PositionFixed.IsChecked == true,
                     new PixelPoint((int)Dec(PositionX), (int)Dec(PositionY)));
 
@@ -481,11 +505,23 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>The hold dropdown's last entry, "Custom…", which takes the hold from a number box.</summary>
+    static bool IsCustomHold(ComboBox hold) => hold.SelectedIndex == ClickHold.ChoicesMs.Length;
+
+    /// <summary>The hold choices show only for a full click; the number box only for "Custom…".</summary>
+    static void ShowHold(ComboBox press, TextBlock label, ComboBox hold, Control customRow, NumericUpDown custom, TextBlock halfNote)
+    {
+        bool full = press.SelectedIndex == 0;
+        label.IsVisible = hold.IsVisible = full;
+        customRow.IsVisible = full && IsCustomHold(hold);
+        halfNote.IsVisible = ClickHold.IsHalf((int)Dec(custom));
+    }
+
     /// <summary>Hold time picked in a Full/Half + hold pair of boxes; 0 for a half click.</summary>
-    static int ReadHoldMs(ComboBox press, ComboBox hold) =>
-        press.SelectedIndex == 1
-            ? ClickHold.HalfClickMs
-            : ClickHold.ChoicesMs[Math.Clamp(hold.SelectedIndex, 0, ClickHold.ChoicesMs.Length - 1)];
+    static int ReadHoldMs(ComboBox press, ComboBox hold, NumericUpDown custom) =>
+        press.SelectedIndex == 1 ? ClickHold.HalfClickMs
+        : IsCustomHold(hold) ? (int)Math.Clamp(Dec(custom), 0, ClickHold.MaxCustomMs)
+        : ClickHold.ChoicesMs[Math.Clamp(hold.SelectedIndex, 0, ClickHold.ChoicesMs.Length - 1)];
 
     static Modifiers ReadModifiers(CheckBox ctrl, CheckBox shift, CheckBox alt, CheckBox meta)
     {
@@ -595,7 +631,7 @@ public partial class MainWindow : Window
                     (ClickButton)Math.Clamp(StepClickButtonBox.SelectedIndex, 0, 2),
                     StepClickTypeBox.SelectedIndex == 1 ? 2 : 1,
                     new PixelPoint((int)Dec(StepClickX), (int)Dec(StepClickY)),
-                    holdMs: ReadHoldMs(StepPressBox, StepHoldBox));
+                    holdMs: ReadHoldMs(StepPressBox, StepHoldBox, StepHoldCustom));
 
             case 1:
                 return MacroStep.MakeDrag(
@@ -993,7 +1029,8 @@ public partial class MainWindow : Window
         SetIndex(ButtonBox, settings.GetInt("MouseButton", 0), 3);
         SetIndex(ClickTypeBox, settings.GetInt("ClickType", 0), 2);
         SetIndex(PressBox, settings.GetInt("Press", 0), 2);
-        SetIndex(HoldBox, settings.GetInt("Hold", HoldBox.SelectedIndex), ClickHold.ChoicesMs.Length);
+        SetIndex(HoldBox, settings.GetInt("Hold", HoldBox.SelectedIndex), ClickHold.ChoicesMs.Length + 1);
+        SetValue(HoldCustom, settings.GetDecimal("HoldCustomMs", ClickHold.DefaultMs));
         PositionFixed.IsChecked = settings.GetBool("FixedPosition", false);
         PositionCursor.IsChecked = PositionFixed.IsChecked != true;
         SetValue(PositionX, settings.GetDecimal("X", 0));
@@ -1037,6 +1074,7 @@ public partial class MainWindow : Window
         settings.Set("ClickType", ClickTypeBox.SelectedIndex);
         settings.Set("Press", PressBox.SelectedIndex);
         settings.Set("Hold", HoldBox.SelectedIndex);
+        settings.Set("HoldCustomMs", Dec(HoldCustom));
         settings.Set("FixedPosition", PositionFixed.IsChecked == true);
         settings.Set("X", Dec(PositionX));
         settings.Set("Y", Dec(PositionY));

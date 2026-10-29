@@ -2,13 +2,13 @@
 
 A small, portable auto clicker and key presser for **Windows, macOS and Linux**. One app, nothing to install: download the file for your computer and open it.
 
-- **Mouse clicks**: left, right or middle button, single or double click, at the cursor or at a fixed spot (use **Pick** to grab a spot). A **full click** (the default) holds the button down for 20, 35 or 50 ms like a real press; a **half click** lets go instantly, like a light tap on a touchpad. Macro click steps have the same choice.
+- **Mouse clicks**: left, right or middle button, single or double click, at the cursor or at a fixed spot (use **Pick** to grab a spot). A **full click** (the default) holds the button down for 20, 35 or 50 ms like a real press, or for any time from 0 to 1000 ms with **Custom…**; a **half click** lets go instantly, like a light tap on a touchpad. A custom hold under 17 ms (one frame at 60 fps) counts as a half click. The **?** next to the hold explains which apps and games register short clicks. Macro click steps have the same choice.
 - **Mouse drags**: hold a button down and glide from one point to another over a set time.
 - **Key presses**: any key, optionally with Ctrl, Shift, Alt/Option or Win/Cmd/Super, and a set hold time.
 - **Macros**: record what you do and replay it, or build a sequence by hand — clicks, drags, key presses and waits. Reorder or delete steps, and save macros as `.json` files to reuse later.
 - **Timing**: an interval from 1 ms up to 24 hours, optional random variation (±ms), and either repeat until stopped or a set number of times.
 - **Global hotkey**: F6 by default (F1–F12 selectable) starts and stops it from any window.
-- **Lag protection**: with **Slow down when lagging** on (the default), it watches for your computer or the app you're automating falling behind, halves the speed (and keeps halving while the lag lasts), then eases back to full speed after 3 seconds without lag. A system notification tells you when it slows down and when it's back to normal.
+- **Lag protection**: with **Slow down when lagging** on (the default), it watches for your computer or the app you're automating falling behind, including a game or web page that stops redrawing under the cursor because it can't keep up with the clicks, halves the speed (quarters it when the app freezes outright) and keeps slowing while the lag lasts, then eases back one step every 3 seconds without lag, waiting 30 seconds before retrying the speed that caused it. It also watches the screen for a moment before the first click to learn what normal looks like. A system notification tells you when it slows down and when it's back to normal.
 - Settings are remembered between runs.
 
 ## Download
@@ -61,6 +61,7 @@ Builds you make yourself are marked "development build" and don't update.
 - **Elevated windows (Windows):** Windows blocks non-admin apps from sending input into programs running as administrator. Right-click the `.exe` and choose **Run as administrator** to automate those.
 - **Hotkey conflicts:** if another app already owns the hotkey, the app says so in the status line; pick a different F-key in **Options**.
 - **Recording permissions:** watching input is a separate privilege from sending it. macOS covers both with the Accessibility permission above. Linux recording needs the X server's RECORD extension, which most distributions ship enabled.
+- **Lag protection on macOS:** to see whether the app under the cursor is still redrawing, Auto Clicker looks at a small patch of the screen there, which macOS treats as screen recording. The first time it asks; allow Auto Clicker under **System Settings → Privacy & Security → Screen Recording** and reopen it. Without that it still slows down for the other kinds of lag. Nothing is saved or sent anywhere.
 
 ## Build from source
 
@@ -86,7 +87,8 @@ src/AutoClicker/
              Macro.cs + MacroStep.cs + MacroAction.cs (macros)
              LagGovernor.cs + LagMonitor.cs (slowing down for lag)
   Input/     one backend per OS, behind IInputBackend:
-             Windows SendInput · macOS CGEvent · Linux XTest
+             Windows SendInput · macOS CGEvent · Linux XTest;
+             ScreenProbe.cs watches the screen under the cursor for lag
   Hotkeys/   global hotkey per OS:
              RegisterHotKey · Carbon RegisterEventHotKey · X11 XGrabKey
   Recording/ input capture per OS, behind IInputRecorder:

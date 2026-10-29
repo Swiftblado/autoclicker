@@ -86,7 +86,7 @@ public sealed class MacroStep
         {
             case StepKind.Click:
                 string what = ClickCount > 1 ? "Double-click" : "Click";
-                if (HoldMs <= 0) what = "Half " + what.ToLowerInvariant();
+                if (ClickHold.IsHalf(HoldMs)) what = "Half " + what.ToLowerInvariant();
                 string where = AtCursor ? "at the cursor" : Point(From);
                 string held = HoldMs > 0 ? ", held " + Time(HoldMs) : "";
                 return what + " " + Button.ToString().ToLowerInvariant() + " " + where + held;

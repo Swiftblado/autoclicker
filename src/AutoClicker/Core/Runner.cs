@@ -22,16 +22,18 @@ public sealed class Runner
 
     /// <summary>
     /// Starts repeating <paramref name="action"/>. With a <paramref name="lag"/> governor, each cycle
-    /// is stretched by its multiplier and late wake-ups are reported to it.
+    /// is stretched by its multiplier and late wake-ups are reported to it. <paramref name="startDelay"/>
+    /// holds the first action back, e.g. while the lag monitor learns what the target normally looks like.
     /// </summary>
-    public void Start(IInputAction action, double intervalMs, int jitterMs, long repeat, LagGovernor? lag = null)
+    public void Start(IInputAction action, double intervalMs, int jitterMs, long repeat, LagGovernor? lag = null,
+        TimeSpan startDelay = default)
     {
         Stop();
         stopRequested = false;
         cancellation = new CancellationTokenSource();
         var cancel = cancellation.Token;
         Interlocked.Exchange(ref count, 0);
-        thread = new Thread(() => Loop(action, intervalMs, jitterMs, repeat, lag, cancel))
+        thread = new Thread(() => Loop(action, intervalMs, jitterMs, repeat, lag, startDelay, cancel))
         {
             IsBackground = true,
             Priority = ThreadPriority.AboveNormal,
@@ -51,7 +53,7 @@ public sealed class Runner
     }
 
     void Loop(IInputAction action, double intervalMs, int jitterMs, long repeat, LagGovernor? lag,
-        CancellationToken cancel)
+        TimeSpan startDelay, CancellationToken cancel)
     {
         RunActivity.KeepTimersPrecise();
         // Windows' default timer resolution is ~15 ms, too coarse for short intervals.
@@ -61,6 +63,8 @@ public sealed class Runner
             var rng = new Random();
             var clock = Stopwatch.StartNew();
             double next = 0;
+            if (startDelay > TimeSpan.Zero) WaitUntil(clock, startDelay.TotalMilliseconds);
+            next = clock.Elapsed.TotalMilliseconds;
 
             while (!stopRequested)
             {
@@ -101,6 +105,10 @@ public sealed class Runner
             if (raisedTimerResolution) WinMm.timeEndPeriod(1);
         }
     }
+
+    /// <summary>Waits until <paramref name="target"/> ms on <paramref name="clock"/>, or until stopped.</summary>
+    void WaitUntil(Stopwatch clock, double target) =>
+        WaitUntil(clock, 0, _ => target, null, 1, out _);
 
     /// <summary>
     /// Waits until <paramref name="cycleStart"/> plus the planned delay. The plan is re-read as it

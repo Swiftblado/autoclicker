@@ -52,14 +52,23 @@
               </StackPanel>
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="Press:" Classes="label" Margin="0,12,10,0" />
-              <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,12,0,0">
-                <ComboBox x:Name="PressBox" Width="130" SelectedIndex="0"
-                          ToolTip.Tip="A full click holds the button down briefly, like pressing it. A half click lets go instantly, like a light tap.">
-                  <ComboBoxItem>Full click</ComboBoxItem>
-                  <ComboBoxItem>Half click</ComboBoxItem>
-                </ComboBox>
-                <TextBlock x:Name="HoldLabel" Text="held for" Classes="label" Margin="14,0,10,0" />
-                <ComboBox x:Name="HoldBox" Width="90" SelectedIndex="0" />
+              <StackPanel Grid.Row="1" Grid.Column="1" Spacing="8" Margin="0,12,0,0">
+                <StackPanel Orientation="Horizontal">
+                  <ComboBox x:Name="PressBox" Width="130" SelectedIndex="0"
+                            ToolTip.Tip="A full click holds the button down briefly, like pressing it. A half click lets go instantly, like a light tap.">
+                    <ComboBoxItem>Full click</ComboBoxItem>
+                    <ComboBoxItem>Half click</ComboBoxItem>
+                  </ComboBox>
+                  <TextBlock x:Name="HoldLabel" Text="held for" Classes="label" Margin="14,0,10,0" />
+                  <ComboBox x:Name="HoldBox" Width="110" SelectedIndex="0" />
+                  <Button x:Name="HoldHelp" Classes="help" Content="?" Margin="8,0,0,0" />
+                </StackPanel>
+                <StackPanel x:Name="HoldCustomRow" Orientation="Horizontal" Spacing="6" IsVisible="False">
+                  <TextBlock Text="Hold" Classes="unit" Margin="0" />
+                  <NumericUpDown x:Name="HoldCustom" Width="96" Minimum="0" Maximum="1000" Value="20" Increment="1" FormatString="0" />
+                  <TextBlock Text="ms" Classes="unit" Margin="0" />
+                  <TextBlock x:Name="HoldHalfNote" Text="(counts as a half click)" Classes="unit" Margin="6,0,0,0" IsVisible="False" />
+                </StackPanel>
               </StackPanel>
 
               <TextBlock Grid.Row="2" Grid.Column="0" Text="Click at:" Classes="label" Margin="0,12,10,0" />
@@ -206,7 +215,14 @@
                         <ComboBoxItem>Half click</ComboBoxItem>
                       </ComboBox>
                       <TextBlock x:Name="StepHoldLabel" Text="held for" Classes="unit" Margin="4,0,2,0" />
-                      <ComboBox x:Name="StepHoldBox" Width="90" SelectedIndex="0" />
+                      <ComboBox x:Name="StepHoldBox" Width="110" SelectedIndex="0" />
+                      <Button x:Name="StepHoldHelp" Classes="help" Content="?" />
+                    </StackPanel>
+                    <StackPanel x:Name="StepHoldCustomRow" Orientation="Horizontal" Spacing="6" IsVisible="False">
+                      <TextBlock Text="Hold" Classes="unit" Margin="0" />
+                      <NumericUpDown x:Name="StepHoldCustom" Width="96" Minimum="0" Maximum="1000" Value="20" Increment="1" FormatString="0" />
+                      <TextBlock Text="ms" Classes="unit" Margin="0" />
+                      <TextBlock x:Name="StepHoldHalfNote" Text="(counts as a half click)" Classes="unit" Margin="6,0,0,0" IsVisible="False" />
                     </StackPanel>
                   </StackPanel>
 
