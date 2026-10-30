@@ -8,8 +8,10 @@ A small, portable auto clicker and key presser for **Windows, macOS and Linux**.
 - **Macros**: record what you do and replay it, or build a sequence by hand — clicks, drags, key presses and waits. Reorder or delete steps, and save macros as `.json` files to reuse later.
 - **Timing**: an interval from 1 ms up to 24 hours, optional random variation (±ms), and either repeat until stopped or a set number of times.
 - **Global hotkey**: F6 by default (F1–F12 selectable) starts and stops it from any window.
-- **Lag protection**: with **Slow down when lagging** on (the default), it watches for your computer or the app you're automating falling behind, including a game or web page that stops redrawing under the cursor because it can't keep up with the clicks, halves the speed (quarters it when the app freezes outright) and keeps slowing while the lag lasts, then eases back one step every 3 seconds without lag, waiting 30 seconds before retrying the speed that caused it. It also watches the screen for a moment before the first click to learn what normal looks like. A system notification tells you when it slows down and when it's back to normal.
+- **Key bindings**: save a setup (clicks, drags, key presses or a macro, with its timing) under a name and its own key or combination, like F7 or Ctrl+1; that key starts and stops it from any window. Turn on **Run alongside others** for bindings that may run at the same time; when two runs both need the mouse they take turns, so a click never lands in the middle of another run's click or drag. Bindings are kept in `bindings.json` next to the settings file.
+- **Lag protection**: with **Slow down when lagging** on (the default), it watches for your computer or the app you're automating falling behind, including a game or web page that stops redrawing under the cursor because it can't keep up with the clicks, halves the speed (quarters it when the app freezes outright) and keeps slowing while the lag lasts, then eases back one step every 3 seconds without lag, waiting 30 seconds before retrying the speed that caused it. It also watches the screen for a moment before the first click to learn what normal looks like. A system notification tells you when it slows down and when it's back to normal; turn off **Notify me when it slows down** to keep it quiet.
 - Settings are remembered between runs.
+- **What's new** under Options lists every version's changes (also in [CHANGELOG.md](CHANGELOG.md)); it opens by itself once after an in-app update.
 
 ## Download
 
@@ -47,6 +49,14 @@ Recording keeps the shape of what you did rather than a literal trace: a press a
 
 **Save...** and **Open...** keep macros as `.json` files (in `Macros` next to the settings file by default). Whatever is in the list is remembered between runs, and the **Repeat the macro** section controls how often the whole sequence replays.
 
+### Key bindings
+
+1. Set something up as usual (any mode, plus its timing).
+2. Under **Key bindings**, type a name, click the key box and press the key or combination that should start it (for example **F7** or **Ctrl+1**), and press **Add current setup**.
+3. From any window, press that key to start it and again to stop it. **Stop** in the app stops everything that's running.
+
+A binding with **Run alongside others** off stops whatever else is running when you start it, so only it runs. With it on, it starts next to whatever is already going. **Load into window** puts a binding's setup back into the window so you can change it; **Replace** saves the window's setup, name, key and option over the selected binding.
+
 ### Updating
 
 The app checks GitHub for a newer release when it opens. If there is one, the button under **Options** reads **Update to v…**; press it, confirm, and Auto Clicker downloads the new version for your system, swaps it in and restarts. Settings and macros are kept. If it can't replace itself (for example the folder isn't writable, or on macOS it's still running from Downloads), it says why and opens the download page instead.
@@ -59,7 +69,7 @@ Builds you make yourself are marked "development build" and don't update.
 
 - **Wayland (Linux):** Wayland deliberately stops apps from sending input to other apps, and there's no portal for it yet, so Auto Clicker needs an Xorg session. Pick "Ubuntu on Xorg" (or your desktop's X11 option) at the login screen. The app says so on screen if it detects Wayland.
 - **Elevated windows (Windows):** Windows blocks non-admin apps from sending input into programs running as administrator. Right-click the `.exe` and choose **Run as administrator** to automate those.
-- **Hotkey conflicts:** if another app already owns the hotkey, the app says so in the status line; pick a different F-key in **Options**.
+- **Hotkey conflicts:** if another app already owns the hotkey, the app says so in the status line; pick a different F-key in **Options**. A key binding whose key is taken is listed with a warning; select it, set another key and press **Replace**.
 - **Recording permissions:** watching input is a separate privilege from sending it. macOS covers both with the Accessibility permission above. Linux recording needs the X server's RECORD extension, which most distributions ship enabled.
 - **Lag protection on macOS:** to see whether the app under the cursor is still redrawing, Auto Clicker looks at a small patch of the screen there, which macOS treats as screen recording. The first time it asks; allow Auto Clicker under **System Settings → Privacy & Security → Screen Recording** and reopen it. Without that it still slows down for the other kinds of lag. Nothing is saved or sent anywhere.
 
@@ -85,7 +95,8 @@ dotnet publish src/AutoClicker/AutoClicker.csproj -c Release -r linux-x64 \
 src/AutoClicker/
   Core/      Runner.cs (timing loop), Settings.cs, InputActions.cs,
              Macro.cs + MacroStep.cs + MacroAction.cs (macros)
-             LagGovernor.cs + LagMonitor.cs (slowing down for lag)
+             LagGovernor.cs + LagMonitor.cs (slowing down for lag),
+             RunSetup.cs + RunSession.cs (one run each), KeyBinding.cs
   Input/     one backend per OS, behind IInputBackend:
              Windows SendInput · macOS CGEvent · Linux XTest;
              ScreenProbe.cs watches the screen under the cursor for lag

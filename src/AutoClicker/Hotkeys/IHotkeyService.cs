@@ -1,15 +1,19 @@
 using System;
+using AutoClicker.Input;
 using Avalonia.Input;
 
 namespace AutoClicker.Hotkeys;
 
-/// <summary>A single system-wide hotkey that works while other apps have focus.</summary>
+/// <summary>
+/// A single system-wide hotkey (a key, optionally with modifiers) that works while other apps have
+/// focus. Create one service per hotkey.
+/// </summary>
 public interface IHotkeyService : IDisposable
 {
     /// <summary>Raised on some background thread; callers marshal to the UI thread themselves.</summary>
     event Action? Pressed;
 
-    bool TryRegister(Key key, out string? error);
+    bool TryRegister(Key key, Modifiers modifiers, out string? error);
     void Unregister();
 }
 
@@ -28,7 +32,7 @@ sealed class NullHotkeyService : IHotkeyService
 {
     public event Action? Pressed { add { } remove { } }
 
-    public bool TryRegister(Key key, out string? error)
+    public bool TryRegister(Key key, Modifiers modifiers, out string? error)
     {
         error = "Global hotkeys aren't supported on this system.";
         return false;

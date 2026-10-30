@@ -23,8 +23,11 @@ public sealed class MouseClickAction(
 {
     public void Perform(CancellationToken cancel)
     {
-        if (useFixedPosition) backend.SetCursorPosition(position);
-        backend.SendClick(button, clickCount, holdMs);
+        lock (InputGate.Lock)
+        {
+            if (useFixedPosition) backend.SetCursorPosition(position);
+            backend.SendClick(button, clickCount, holdMs);
+        }
     }
 }
 
@@ -35,21 +38,24 @@ public sealed class KeyPressAction(IInputBackend backend, Key key, Modifiers mod
 
     public void Perform(CancellationToken cancel)
     {
-        var held = new List<Key>();
-        foreach (var modifier in Order)
+        lock (InputGate.Lock)
         {
-            if (!modifiers.HasFlag(modifier)) continue;
-            var modifierKey = KeyMap.ModifierKey(modifier);
-            backend.SendKey(modifierKey, true);
-            held.Add(modifierKey);
+            var held = new List<Key>();
+            foreach (var modifier in Order)
+            {
+                if (!modifiers.HasFlag(modifier)) continue;
+                var modifierKey = KeyMap.ModifierKey(modifier);
+                backend.SendKey(modifierKey, true);
+                held.Add(modifierKey);
+            }
+
+            backend.SendKey(key, true);
+            if (holdMs > 0) Wait.For(holdMs, cancel);
+            backend.SendKey(key, false);
+
+            for (int i = held.Count - 1; i >= 0; i--)
+                backend.SendKey(held[i], false);
         }
-
-        backend.SendKey(key, true);
-        if (holdMs > 0) Wait.For(holdMs, cancel);
-        backend.SendKey(key, false);
-
-        for (int i = held.Count - 1; i >= 0; i--)
-            backend.SendKey(held[i], false);
     }
 }
 
@@ -66,16 +72,19 @@ public sealed class DragAction(
 
     public void Perform(CancellationToken cancel)
     {
-        backend.SetCursorPosition(from);
-        backend.SendMouseButton(button, true);
-        try
+        lock (InputGate.Lock)
         {
-            Glide(backend, from, to, durationMs, cancel);
-        }
-        finally
-        {
-            // Always let go, even when stopped mid-drag, or the button stays stuck down.
-            backend.SendMouseButton(button, false);
+            backend.SetCursorPosition(from);
+            backend.SendMouseButton(button, true);
+            try
+            {
+                Glide(backend, from, to, durationMs, cancel);
+            }
+            finally
+            {
+                // Always let go, even when stopped mid-drag, or the button stays stuck down.
+                backend.SendMouseButton(button, false);
+            }
         }
     }
 
@@ -94,6 +103,16 @@ public sealed class DragAction(
         }
         backend.SetCursorPosition(to);
     }
+}
+
+/// <summary>
+/// Lets runs that go at the same time take turns with the mouse and keyboard: each gesture (a
+/// click with its cursor move, a key press, a drag) finishes before another run's starts, so
+/// one never lands in the middle of another. Uncontended when only one run is going.
+/// </summary>
+public static class InputGate
+{
+    public static readonly object Lock = new();
 }
 
 static class Wait

@@ -16,14 +16,30 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using KeyBinding = AutoClicker.Core.KeyBinding;
 
 namespace AutoClicker.Views;
 
-enum AutomationMode { Clicks, Drags, Keys, Macro }
-
 public partial class MainWindow : Window
 {
+    /// <summary>A saved binding with what it needs while the app is open: its hotkey and its run.</summary>
+    sealed class BindingSlot(KeyBinding binding, IHotkeyService hotkey, RunSession session)
+    {
+        public KeyBinding Binding { get; set; } = binding;
+        public IHotkeyService Hotkey { get; set; } = hotkey;
+        public RunSession Session { get; } = session;
+        /// <summary>Why the key couldn't be registered, or null when it works.</summary>
+        public string? Error { get; set; }
+        public bool WasRunning { get; set; }
+    }
+
     const int StartCountdownSeconds = 3;
+
+    /// <summary>
+    /// A binding with modifiers starts this much later, so the Ctrl or Shift still held from pressing
+    /// it doesn't turn its first click into a Ctrl-click.
+    /// </summary>
+    static readonly TimeSpan ModifierReleaseTime = TimeSpan.FromMilliseconds(300);
     const int RecordCountdownSeconds = 2;
     const string CurrentMacroFile = "current.json";
 
@@ -39,10 +55,11 @@ public partial class MainWindow : Window
     readonly IInputBackend backend = InputBackend.Create();
     readonly IHotkeyService hotkeys = HotkeyService.Create();
     readonly IInputRecorder recorder = InputRecorder.Create();
-    readonly Runner runner = new();
     readonly Settings settings = Settings.Load();
-    readonly LagGovernor lagGovernor = new();
-    readonly LagMonitor lagMonitor;
+    /// <summary>The run of the setup shown in the window, started with Start or the start/stop key.</summary>
+    readonly RunSession mainRun;
+    readonly List<BindingSlot> bindings = [];
+    readonly ObservableCollection<string> bindingRows = [];
     readonly ISystemNotifier notifier;
 
     readonly DispatcherTimer uiTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
@@ -56,14 +73,13 @@ public partial class MainWindow : Window
     readonly List<RecordedEvent> recordedEvents = [];
     readonly object recordLock = new();
 
-    MacroAction? runningMacro;
-    IDisposable? runActivity;
-    bool lagSlowed;
     UpdateInfo? availableUpdate;
     bool checkingForUpdate;
     double? updateProgress;   // null when no install is in progress
     Key chosenKey = Key.None;
     Key stepKey = Key.None;
+    Key bindingKey = Key.None;
+    Modifiers bindingModifiers = Modifiers.None;
     int countdown;
     int recordCountdown;
     int pickTicks;
@@ -80,7 +96,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        lagMonitor = new LagMonitor(lagGovernor, TargetProbe.Create(), ScreenProbe.Create, backend.GetCursorPosition);
+        mainRun = NewSession();
         notifier = SystemNotifier.Create(() => TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
 
         ModAlt.Content = StepModAlt.Content = KeyMap.AltName;
@@ -116,6 +132,7 @@ public partial class MainWindow : Window
         RepeatForever.IsCheckedChanged += OnSettingChanged;
         RepeatLimited.IsCheckedChanged += OnSettingChanged;
         TopMostBox.IsCheckedChanged += (_, _) => Topmost = TopMostBox.IsChecked == true;
+        LagCheckBox.IsCheckedChanged += OnSettingChanged;
         HotkeyBox.SelectionChanged += (_, _) => { RegisterHotkey(); UpdateControls(); };
 
         StartButton.Click += (_, _) => BeginCountdown();
@@ -137,6 +154,15 @@ public partial class MainWindow : Window
         MacroOpenButton.Click += async (_, _) => await OpenMacroAsync();
         MacroSaveButton.Click += async (_, _) => await SaveMacroAsync();
         UpdateButton.Click += async (_, _) => await OnUpdateClickedAsync();
+        WhatsNewButton.Click += async (_, _) => await ChangelogWindow.ShowAsync(this);
+        BindingList.ItemsSource = bindingRows;
+        BindingList.SelectionChanged += (_, _) => OnBindingSelected();
+        BindingAddButton.Click += (_, _) => AddBinding(replaceSelected: false);
+        BindingReplaceButton.Click += (_, _) => AddBinding(replaceSelected: true);
+        BindingLoadButton.Click += (_, _) => LoadBindingIntoWindow();
+        BindingRemoveButton.Click += (_, _) => RemoveBinding();
+        BindingKeyCapture.AddHandler(KeyDownEvent, OnBindingCaptureKeyDown, RoutingStrategies.Tunnel);
+        BindingKeyCapture.PointerPressed += (_, _) => BindingKeyCapture.Focus();
         OpenAccessibilityButton.Click += (_, _) =>
             Updater.OpenInBrowser("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
         VersionText.Text = AppVersion.Display;
@@ -152,10 +178,10 @@ public partial class MainWindow : Window
         recordCountdownTimer.Tick += (_, _) => RecordCountdownTick();
         recorder.Recorded += OnRecorded;
         trayHideTimer.Tick += (_, _) => { trayHideTimer.Stop(); notifier.Hide(); };
-        lagMonitor.Changed += change => Dispatcher.UIThread.Post(() => OnLagChanged(change));
 
         LoadSettings();
         LoadCurrentMacro();
+        LoadBindings();
         hotkeys.Pressed += () => Dispatcher.UIThread.Post(ToggleFromHotkey);
 
         uiTimer.Start();
@@ -167,15 +193,28 @@ public partial class MainWindow : Window
     {
         base.OnOpened(e);
         RegisterHotkey();
+        RegisterBindings();
         UpdateControls();
         if (AppVersion.IsUpdatable) _ = CheckForUpdateAsync(quiet: true);
+        // Once after an in-app update, show what it brought.
+        if (Program.JustUpdated) Dispatcher.UIThread.Post(async () => await ChangelogWindow.ShowAsync(this));
+    }
+
+    RunSession NewSession()
+    {
+        var session = new RunSession(backend, TargetProbe.Create(), ScreenProbe.Create, backend.GetCursorPosition);
+        session.LagChanged += (s, change) => Dispatcher.UIThread.Post(() => OnLagChanged(s, change));
+        return session;
     }
 
     // ---------------------------------------------------------------- state
 
     AutomationMode Mode => (AutomationMode)Math.Clamp(ModeBox.SelectedIndex, 0, 3);
 
-    bool IsBusy => runner.IsRunning || countdownTimer.IsEnabled;
+    /// <summary>The window's own setup is counting down or running (key bindings aside).</summary>
+    bool IsBusy => mainRun.IsRunning || countdownTimer.IsEnabled;
+
+    int BindingsRunning => bindings.Count(slot => slot.Session.IsRunning);
 
     bool IsRecording => recorder.IsRecording || recordCountdownTimer.IsEnabled;
 
@@ -245,8 +284,18 @@ public partial class MainWindow : Window
             : availableUpdate != null ? "Update to v" + AppVersion.Format(availableUpdate.Version)
             : "Check for updates";
 
+        LagNotifyBox.IsEnabled = LagCheckBox.IsChecked == true;
+
+        int binding = BindingList.SelectedIndex;
+        bool bindingSelected = binding >= 0 && binding < bindings.Count;
+        BindingsCard.IsEnabled = !IsRecording;
+        BindingsEmpty.IsVisible = bindings.Count == 0;
+        BindingList.IsVisible = bindings.Count > 0;
+        BindingReplaceButton.IsEnabled = BindingLoadButton.IsEnabled = BindingRemoveButton.IsEnabled = bindingSelected;
+        BindingLoadButton.IsEnabled = bindingSelected && !busy;
+
         StartButton.IsEnabled = !busy && backend.IsAvailable;
-        StopButton.IsEnabled = IsBusy;
+        StopButton.IsEnabled = IsBusy || BindingsRunning > 0;
         StartButton.Content = hotkeyError == null ? "Start (" + HotkeyName + ")" : "Start";
         StopButton.Content = hotkeyError == null ? "Stop (" + HotkeyName + ")" : "Stop";
 
@@ -264,16 +313,27 @@ public partial class MainWindow : Window
             UpdateControls();
         }
 
-        bool running = runner.IsRunning;
-        long count = runner.Count;
-        if (running != wasRunning || count != lastCount)
+        bool bindingsChanged = false;
+        foreach (var slot in bindings)
         {
+            bool slotRunning = slot.Session.IsRunning;
+            if (slotRunning == slot.WasRunning) continue;
+            slot.WasRunning = slotRunning;
+            if (!slotRunning) EndSession(slot.Session);   // finished its repeat count
+            bindingsChanged = true;
+        }
+        if (bindingsChanged) RebuildBindingRows();
+
+        bool running = mainRun.IsRunning;
+        long count = mainRun.Count;
+        if (running != wasRunning || count != lastCount || bindingsChanged)
+        {
+            if (running != wasRunning && !running) EndSession(mainRun);
             wasRunning = running;
             lastCount = count;
-            if (!running) OnRunEnded();
             UpdateControls();
         }
-        else if (running && Mode == AutomationMode.Macro)
+        else if (running && mainRun.Macro != null)
         {
             RefreshStatus();   // step counter ticks along while the pass count holds still
         }
@@ -284,7 +344,7 @@ public partial class MainWindow : Window
         if (transientMessage != null) { StatusText.Text = transientMessage; return; }
         if (validationMessage != null) { StatusText.Text = validationMessage; return; }
 
-        long count = runner.Count;
+        long count = mainRun.Count;
         string text;
 
         if (recordCountdownTimer.IsEnabled)
@@ -293,54 +353,51 @@ public partial class MainWindow : Window
             text = "Recording your clicks and keys. Press " + HotkeyName + " to finish.";
         else if (countdownTimer.IsEnabled)
             text = "Starting in " + countdown + "… switch to your target window.";
-        else if (runner.IsRunning)
-            text = "Running · " + Counted(count) + "." + StepProgress() + LagNote() +
+        else if (mainRun.IsRunning)
+            text = "Running · " + Counted(mainRun, count) + "." + StepProgress() + LagNote(mainRun) +
                    (hotkeyError == null ? " Press " + HotkeyName + " to stop." : "");
         else if (count > 0)
-            text = "Stopped · " + Counted(count) + ".";
+            text = "Stopped · " + Counted(mainRun, count) + ".";
         else if (hotkeyError != null)
             text = HotkeyName + " isn't available as a start/stop key (" + hotkeyError +
                    "). Use the buttons below or pick another key.";
         else
             text = "Ready. Press " + HotkeyName + " from any window to start or stop.";
 
+        int bindingsRunning = BindingsRunning;
+        if (bindingsRunning > 0)
+            text += " " + bindingsRunning + (bindingsRunning == 1 ? " key binding is" : " key bindings are") +
+                    " running; Stop stops everything.";
+
         StatusText.Text = text;
     }
 
-    string Counted(long count)
-    {
-        string noun = Mode switch
-        {
-            AutomationMode.Clicks => count == 1 ? "click" : "clicks",
-            AutomationMode.Drags => count == 1 ? "drag" : "drags",
-            AutomationMode.Keys => count == 1 ? "key press" : "key presses",
-            _ => count == 1 ? "pass" : "passes"
-        };
-        return count.ToString("N0", CultureInfo.CurrentCulture) + " " + noun;
-    }
+    static string Counted(RunSession session, long count) =>
+        count.ToString("N0", CultureInfo.CurrentCulture) + " " + (session.Setup?.CountNoun(count) ?? "");
 
-    string LagNote()
+    static string LagNote(RunSession session)
     {
-        double multiplier = lagGovernor.Multiplier;
-        if (!lagSlowed || multiplier <= 1) return "";
+        double multiplier = session.Multiplier;
+        if (!session.Slowed || multiplier <= 1) return "";
         return " Slowed " + multiplier.ToString("N0", CultureInfo.CurrentCulture) + "× for lag.";
     }
 
     string StepProgress()
     {
-        var running = runningMacro;
+        var running = mainRun.Macro;
         if (running == null) return "";
         int step = running.CurrentStepIndex;
-        return step >= 0 ? " Step " + (step + 1) + " of " + macro.Steps.Count + "." : "";
+        return step >= 0 ? " Step " + (step + 1) + " of " + (mainRun.Setup?.Steps.Count ?? 0) + "." : "";
     }
 
     // ---------------------------------------------------------------- start / stop
 
     void BeginCountdown()
     {
-        if (BuildAction() == null) { UpdateControls(); return; }
+        var setup = BuildSetup();
+        if (setup == null) { UpdateControls(); return; }
         // Use the countdown to learn what the target looks like when it's keeping up.
-        if (LagCheckBox.IsChecked == true) lagMonitor.Start();
+        if (setup.LagCheck) mainRun.WatchAhead();
         // Started from the button, the first clicks or keys would land on this window,
         // so give the user a moment to switch to their target.
         countdown = StartCountdownSeconds;
@@ -362,90 +419,96 @@ public partial class MainWindow : Window
     void ToggleFromHotkey()
     {
         if (IsRecording) StopRecording();
-        else if (IsBusy) StopEverything();
+        else if (IsBusy) StopMainRun();
         else StartNow();
     }
 
     void StartNow()
     {
-        bool lagCheck = LagCheckBox.IsChecked == true;
-        // With the lag check on, every send is timed: a slow one is a sign of lag.
-        var action = BuildAction(lagCheck ? new TimedInputBackend(backend, lagGovernor.ReportSend) : backend);
-        if (action == null) { UpdateControls(); return; }
-
-        double interval = (double)(Dec(Hours) * 3600000m + Dec(Minutes) * 60000m +
-                                   Dec(Seconds) * 1000m + Dec(Millis));
-        long repeat = RepeatLimited.IsChecked == true ? (long)Dec(RepeatCount) : 0;
-        runningMacro = action as MacroAction;
+        var setup = BuildSetup();
+        if (setup == null) { mainRun.Stop(); UpdateControls(); return; }
         SaveSettings();
-        trayHideTimer.Stop();
-        notifier.Hide();
-        lagSlowed = false;
-        runActivity = RunActivity.Begin();
-        // The lag monitor watches the target briefly before the first click (the Start button's
-        // countdown usually covers that already).
-        var warmUp = TimeSpan.Zero;
-        if (lagCheck)
-        {
-            if (!lagMonitor.IsRunning) lagMonitor.Start();
-            warmUp = LagMonitor.WarmUp - lagMonitor.WatchingFor;
-        }
-        else lagMonitor.Stop();
-        runner.Start(action, interval, (int)Dec(Jitter), repeat, lagCheck ? lagGovernor : null, warmUp);
+        BeforeRunStarts();
+        mainRun.Start(setup);
         UpdateControls();
     }
 
+    /// <summary>The window's own run stops; key bindings keep going.</summary>
+    void StopMainRun()
+    {
+        countdownTimer.Stop();
+        EndSession(mainRun);
+        UpdateControls();
+    }
+
+    /// <summary>The Stop button: the window's run and every key binding.</summary>
     void StopEverything()
     {
         countdownTimer.Stop();
-        runner.Stop();
-        OnRunEnded();
+        EndSession(mainRun);
+        foreach (var slot in bindings) EndSession(slot.Session);
+        RebuildBindingRows();
         UpdateControls();
     }
 
-    /// <summary>Tidies up after a run, whether it was stopped or finished its repeat count.</summary>
-    void OnRunEnded()
+    void BeforeRunStarts()
     {
-        runningMacro = null;
-        lagMonitor.Stop();
-        runActivity?.Dispose();
-        runActivity = null;
-        if (lagSlowed)
+        // A notification left over from an earlier run is out of date now.
+        if (!AllSessions().Any(s => s.IsRunning && s.Slowed))
         {
-            // Nothing to recover from now; take the tray icon away rather than leave it behind.
-            lagSlowed = false;
             trayHideTimer.Stop();
             notifier.Hide();
         }
     }
 
-    void OnLagChanged(LagChange change)
+    /// <summary>Stops a run (or tidies up after one that finished its repeat count).</summary>
+    void EndSession(RunSession session)
     {
-        if (!runner.IsRunning) return;   // posted just before the run ended
+        session.Stop();
+        if (!session.Slowed) return;
+        session.Slowed = false;
+        // Nothing to recover from now; take the tray icon away rather than leave it behind.
+        if (!AllSessions().Any(s => s.Slowed))
+        {
+            trayHideTimer.Stop();
+            notifier.Hide();
+        }
+    }
+
+    IEnumerable<RunSession> AllSessions() => bindings.Select(slot => slot.Session).Prepend(mainRun);
+
+    void OnLagChanged(RunSession session, LagChange change)
+    {
+        if (!session.IsRunning) return;   // posted just before the run ended
+
+        // Name the binding, so it's clear which run slowed down when several are going.
+        var slot = bindings.FirstOrDefault(s => s.Session == session);
+        string which = slot == null ? "" : " (" + BindingLabel(slot.Binding) + ")";
+        bool notify = LagNotifyBox.IsChecked == true;
 
         switch (change)
         {
             case LagChange.Slowed:
-                lagSlowed = true;
+                session.Slowed = true;
+                if (!notify) break;
                 trayHideTimer.Stop();
-                notifier.Show("Auto Clicker slowed down",
-                    "Lag detected: " + lagGovernor.Reason + ". Running at half speed, and slower if it continues, until it clears.",
+                notifier.Show("Auto Clicker slowed down" + which,
+                    "Lag detected: " + session.LagReason + ". Running at half speed, and slower if it continues, until it clears.",
                     NotificationKind.Warning);
                 break;
 
             case LagChange.Recovered:
-                lagSlowed = false;
-                notifier.Show("Auto Clicker back to full speed", "The lag has cleared.", NotificationKind.Info);
+                session.Slowed = false;
+                if (!notify) break;
+                notifier.Show("Auto Clicker back to full speed" + which, "The lag has cleared.", NotificationKind.Info);
                 trayHideTimer.Start();
                 break;
         }
         RefreshStatus();
     }
 
-    IInputAction? BuildAction() => BuildAction(backend);
-
-    /// <param name="target">Where the action sends its input: the backend itself, or a wrapper round it.</param>
-    IInputAction? BuildAction(IInputBackend target)
+    /// <summary>The window's setup, checked and ready to run; null (with a message) when it can't run.</summary>
+    RunSetup? BuildSetup()
     {
         validationMessage = null;
         transientMessage = null;
@@ -456,53 +519,106 @@ public partial class MainWindow : Window
             return null;
         }
 
-        if (Dec(Hours) + Dec(Minutes) + Dec(Seconds) + Dec(Millis) <= 0)
+        var setup = CaptureSetup();
+        validationMessage = setup.Problem() ?? KeyClash(setup, null);
+        return validationMessage == null ? setup : null;
+    }
+
+    /// <summary>
+    /// A key-press setup can't press a key that starts or stops something, or each press would
+    /// toggle a run. <paramref name="own"/> is the binding the setup is for, if any.
+    /// </summary>
+    string? KeyClash(RunSetup setup, KeyBinding? own)
+    {
+        if (setup.Mode != AutomationMode.Keys) return null;
+        if (setup.Modifiers == Modifiers.None && setup.Key == HotkeyKey && hotkeyError == null)
+            return "The key to press can't also be the start/stop key (" + HotkeyName + ").";
+        if (own != null && own.SameKeyAs(setup.Key, setup.Modifiers))
+            return "The key to press can't also be the binding's own key (" + own.KeyName + ").";
+        var other = bindings.FirstOrDefault(slot => slot.Binding != own && slot.Binding.SameKeyAs(setup.Key, setup.Modifiers));
+        return other == null ? null
+            : "The key to press can't be " + other.Binding.KeyName + ", which starts the key binding " + BindingLabel(other.Binding) + ".";
+    }
+
+    /// <summary>Everything set up in the window, as one setup.</summary>
+    RunSetup CaptureSetup() => new()
+    {
+        Mode = Mode,
+        Button = (ClickButton)Math.Clamp(ButtonBox.SelectedIndex, 0, 2),
+        ClickCount = ClickTypeBox.SelectedIndex == 1 ? 2 : 1,
+        HoldMs = ReadHoldMs(PressBox, HoldBox, HoldCustom),
+        FixedPosition = PositionFixed.IsChecked == true,
+        X = (int)Dec(PositionX),
+        Y = (int)Dec(PositionY),
+        DragButton = (ClickButton)Math.Clamp(DragButtonBox.SelectedIndex, 0, 2),
+        DragFromX = (int)Dec(DragFromX),
+        DragFromY = (int)Dec(DragFromY),
+        DragToX = (int)Dec(DragToX),
+        DragToY = (int)Dec(DragToY),
+        DragDurationMs = (int)Dec(DragDuration),
+        Key = chosenKey,
+        Modifiers = ReadModifiers(ModCtrl, ModShift, ModAlt, ModMeta),
+        KeyHoldMs = (int)Dec(HoldMs),
+        Steps = macro.Clone().Steps,
+        IntervalMs = (double)(Dec(Hours) * 3600000m + Dec(Minutes) * 60000m + Dec(Seconds) * 1000m + Dec(Millis)),
+        JitterMs = (int)Dec(Jitter),
+        Repeat = RepeatLimited.IsChecked == true ? (long)Dec(RepeatCount) : 0,
+        LagCheck = LagCheckBox.IsChecked == true
+    };
+
+    /// <summary>Puts a saved setup back into the window's controls, to look at or change it.</summary>
+    void ShowSetup(RunSetup setup)
+    {
+        ModeBox.SelectedIndex = (int)setup.Mode;
+        ButtonBox.SelectedIndex = (int)setup.Button;
+        ClickTypeBox.SelectedIndex = setup.ClickCount > 1 ? 1 : 0;
+        SetHold(PressBox, HoldBox, HoldCustom, setup.HoldMs);
+        PositionFixed.IsChecked = setup.FixedPosition;
+        PositionCursor.IsChecked = !setup.FixedPosition;
+        SetValue(PositionX, setup.X);
+        SetValue(PositionY, setup.Y);
+        DragButtonBox.SelectedIndex = (int)setup.DragButton;
+        SetValue(DragFromX, setup.DragFromX);
+        SetValue(DragFromY, setup.DragFromY);
+        SetValue(DragToX, setup.DragToX);
+        SetValue(DragToY, setup.DragToY);
+        SetValue(DragDuration, setup.DragDurationMs);
+        chosenKey = KeyMap.IsSupported(setup.Key) ? setup.Key : Key.None;
+        ModCtrl.IsChecked = setup.Modifiers.HasFlag(Modifiers.Control);
+        ModShift.IsChecked = setup.Modifiers.HasFlag(Modifiers.Shift);
+        ModAlt.IsChecked = setup.Modifiers.HasFlag(Modifiers.Alt);
+        ModMeta.IsChecked = setup.Modifiers.HasFlag(Modifiers.Meta);
+        SetValue(HoldMs, setup.KeyHoldMs);
+        UpdateKeyCaptureText();
+
+        if (setup.Mode == AutomationMode.Macro)
         {
-            validationMessage = "Set an interval of at least 1 ms.";
-            return null;
+            macro.Steps.Clear();
+            macro.Steps.AddRange(setup.Steps.Select(step => step.Clone()));
+            RebuildStepRows();
+            SaveCurrentMacro();
         }
 
-        switch (Mode)
-        {
-            case AutomationMode.Clicks:
-                return new MouseClickAction(
-                    target,
-                    (ClickButton)Math.Clamp(ButtonBox.SelectedIndex, 0, 2),
-                    ClickTypeBox.SelectedIndex == 1 ? 2 : 1,
-                    ReadHoldMs(PressBox, HoldBox, HoldCustom),
-                    PositionFixed.IsChecked == true,
-                    new PixelPoint((int)Dec(PositionX), (int)Dec(PositionY)));
+        long ms = (long)Math.Round(setup.IntervalMs);
+        SetValue(Hours, ms / 3600000);
+        SetValue(Minutes, ms / 60000 % 60);
+        SetValue(Seconds, ms / 1000 % 60);
+        SetValue(Millis, ms % 1000);
+        SetValue(Jitter, setup.JitterMs);
+        RepeatLimited.IsChecked = setup.Repeat > 0;
+        RepeatForever.IsChecked = setup.Repeat <= 0;
+        if (setup.Repeat > 0) SetValue(RepeatCount, setup.Repeat);
+        LagCheckBox.IsChecked = setup.LagCheck;
+    }
 
-            case AutomationMode.Drags:
-                return new DragAction(
-                    target,
-                    (ClickButton)Math.Clamp(DragButtonBox.SelectedIndex, 0, 2),
-                    new PixelPoint((int)Dec(DragFromX), (int)Dec(DragFromY)),
-                    new PixelPoint((int)Dec(DragToX), (int)Dec(DragToY)),
-                    (int)Dec(DragDuration));
-
-            case AutomationMode.Keys:
-                if (chosenKey == Key.None)
-                {
-                    validationMessage = "Click the Key box and press the key you want repeated.";
-                    return null;
-                }
-                if (chosenKey == HotkeyKey && hotkeyError == null)
-                {
-                    validationMessage = "The key to press can't also be the start/stop key (" + HotkeyName + ").";
-                    return null;
-                }
-                return new KeyPressAction(target, chosenKey, ReadModifiers(ModCtrl, ModShift, ModAlt, ModMeta),
-                    (int)Dec(HoldMs));
-
-            default:
-                if (macro.Steps.Count == 0)
-                {
-                    validationMessage = "The macro is empty. Record one, or add steps below.";
-                    return null;
-                }
-                return new MacroAction(target, macro);
-        }
+    /// <summary>The reverse of <see cref="ReadHoldMs"/>: picks the preset that matches, or "Custom…".</summary>
+    static void SetHold(ComboBox press, ComboBox hold, NumericUpDown custom, int holdMs)
+    {
+        press.SelectedIndex = holdMs == ClickHold.HalfClickMs ? 1 : 0;
+        if (holdMs == ClickHold.HalfClickMs) return;
+        int preset = Array.IndexOf(ClickHold.ChoicesMs, holdMs);
+        hold.SelectedIndex = preset >= 0 ? preset : ClickHold.ChoicesMs.Length;
+        if (preset < 0) SetValue(custom, holdMs);
     }
 
     /// <summary>The hold dropdown's last entry, "Custom…", which takes the hold from a number box.</summary>
@@ -1008,7 +1124,217 @@ public partial class MainWindow : Window
     void RegisterHotkey()
     {
         hotkeys.Unregister();
-        hotkeyError = hotkeys.TryRegister(HotkeyKey, out var error) ? null : error ?? "not available";
+        var clash = bindings.FirstOrDefault(slot => slot.Binding.SameKeyAs(HotkeyKey, Modifiers.None));
+        hotkeyError = clash != null ? "the key binding " + BindingLabel(clash.Binding) + " uses it"
+            : hotkeys.TryRegister(HotkeyKey, Modifiers.None, out var error) ? null : error ?? "not available";
+    }
+
+    // ---------------------------------------------------------------- key bindings
+
+    static string BindingLabel(KeyBinding binding) =>
+        string.IsNullOrWhiteSpace(binding.Name) ? binding.KeyName : "“" + binding.Name + "” (" + binding.KeyName + ")";
+
+    void LoadBindings()
+    {
+        foreach (var binding in KeyBindingStore.Load())
+            bindings.Add(new BindingSlot(binding, HotkeyService.Create(), NewSession()));
+        RebuildBindingRows();
+    }
+
+    void SaveBindings() => KeyBindingStore.Save(bindings.Select(slot => slot.Binding).ToList());
+
+    /// <summary>Registers every binding's key; ones that are taken stay listed with the reason.</summary>
+    void RegisterBindings()
+    {
+        foreach (var slot in bindings) slot.Error = Register(slot);
+        RebuildBindingRows();
+    }
+
+    /// <summary>Registers the slot's key; returns why it couldn't be, or null.</summary>
+    string? Register(BindingSlot slot)
+    {
+        slot.Hotkey.Unregister();
+        var binding = slot.Binding;
+        if (!slot.Hotkey.TryRegister(binding.Key, binding.Modifiers, out var error)) return error ?? "not available";
+        // One handler per service; registering again only changes the key it listens for.
+        if (!slotsWithHandler.Contains(slot.Hotkey))
+        {
+            var hotkey = slot.Hotkey;
+            hotkey.Pressed += () => Dispatcher.UIThread.Post(() =>
+            {
+                var pressed = bindings.FirstOrDefault(s => s.Hotkey == hotkey);
+                if (pressed != null) ToggleBinding(pressed);
+            });
+            slotsWithHandler.Add(hotkey);
+        }
+        return null;
+    }
+
+    readonly HashSet<IHotkeyService> slotsWithHandler = [];
+
+    void ToggleBinding(BindingSlot slot)
+    {
+        if (IsRecording) return;   // the key is probably being pressed to be recorded
+        if (slot.Session.IsRunning)
+        {
+            EndSession(slot.Session);
+            RebuildBindingRows();
+            UpdateControls();
+            return;
+        }
+
+        var binding = slot.Binding;
+        transientMessage = !backend.IsAvailable ? backend.UnavailableReason
+            : (binding.Setup.Problem() ?? KeyClash(binding.Setup, binding)) is { } problem ? BindingLabel(binding) + ": " + problem
+            : null;
+        if (transientMessage != null) { UpdateControls(); return; }
+
+        if (!binding.RunAlongside)
+        {
+            countdownTimer.Stop();
+            EndSession(mainRun);
+            foreach (var other in bindings)
+                if (other != slot) EndSession(other.Session);
+        }
+
+        BeforeRunStarts();
+        slot.Session.Start(binding.Setup.Clone(), binding.Modifiers == Modifiers.None ? TimeSpan.Zero : ModifierReleaseTime);
+        slot.WasRunning = true;
+        RebuildBindingRows();
+        UpdateControls();
+    }
+
+    void RebuildBindingRows()
+    {
+        int selected = BindingList.SelectedIndex;
+        bindingRows.Clear();
+        foreach (var slot in bindings)
+        {
+            var binding = slot.Binding;
+            string row = binding.KeyName + "  ·  " +
+                         (string.IsNullOrWhiteSpace(binding.Name) ? "" : binding.Name + ": ") +
+                         binding.Setup.Describe() +
+                         (binding.RunAlongside ? " · alongside" : "");
+            if (slot.Error != null) row = "⚠ " + row + " · key unavailable: " + slot.Error;
+            else if (slot.Session.IsRunning) row = "▶ " + row + " · running";
+            bindingRows.Add(row);
+        }
+        if (selected >= 0 && selected < bindingRows.Count) BindingList.SelectedIndex = selected;
+    }
+
+    void OnBindingSelected()
+    {
+        int index = BindingList.SelectedIndex;
+        if (index >= 0 && index < bindings.Count)
+        {
+            var binding = bindings[index].Binding;
+            BindingName.Text = binding.Name;
+            bindingKey = binding.Key;
+            bindingModifiers = binding.Modifiers;
+            BindingAlongside.IsChecked = binding.RunAlongside;
+            UpdateBindingKeyText();
+        }
+        UpdateControls();
+    }
+
+    void OnBindingCaptureKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (!TryCapture(e, out var key)) return;
+        bindingKey = key;
+        bindingModifiers = Modifiers.None;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) bindingModifiers |= Modifiers.Control;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) bindingModifiers |= Modifiers.Shift;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) bindingModifiers |= Modifiers.Alt;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Meta)) bindingModifiers |= Modifiers.Meta;
+        UpdateBindingKeyText();
+        UpdateControls();
+    }
+
+    void UpdateBindingKeyText()
+    {
+        BindingKeyText.Text = bindingKey == Key.None ? "Click to set key" : KeyMap.ComboName(bindingKey, bindingModifiers);
+        BindingKeyText.Opacity = bindingKey == Key.None ? 0.6 : 1;
+    }
+
+    /// <summary>Saves the window's setup under the name and key in the editor, as a new binding or over the selected one.</summary>
+    void AddBinding(bool replaceSelected)
+    {
+        validationMessage = transientMessage = null;
+        int index = replaceSelected ? BindingList.SelectedIndex : -1;
+        if (replaceSelected && (index < 0 || index >= bindings.Count)) return;
+        var existing = index >= 0 ? bindings[index] : null;
+
+        var binding = new KeyBinding
+        {
+            Name = (BindingName.Text ?? "").Trim(),
+            Key = bindingKey,
+            Modifiers = bindingModifiers,
+            RunAlongside = BindingAlongside.IsChecked == true,
+            Setup = CaptureSetup()
+        };
+
+        string? problem = bindingKey == Key.None ? "Click the key box next to the name and press the key that should start it."
+            : binding.SameKeyAs(HotkeyKey, Modifiers.None) ? HotkeyName + " is already the start/stop key. Pick another key."
+            : bindings.FirstOrDefault(s => s != existing && s.Binding.SameKeyAs(bindingKey, bindingModifiers)) is { } taken
+                ? binding.KeyName + " already starts " + BindingLabel(taken.Binding) + ". Pick another key, or select that one and Replace it."
+            : binding.Setup.Problem() ?? KeyClash(binding.Setup, binding);
+        if (problem != null) { transientMessage = problem; UpdateControls(); return; }
+
+        var slot = existing ?? new BindingSlot(binding, HotkeyService.Create(), NewSession());
+        var previous = slot.Binding;
+        if (existing != null) EndSession(existing.Session);
+        slot.Binding = binding;
+        if (Register(slot) is { } error)
+        {
+            // Keep things as they were rather than end up with a binding whose key doesn't work.
+            slot.Binding = previous;
+            if (existing != null) slot.Error = Register(slot);
+            else slot.Hotkey.Dispose();
+            transientMessage = binding.KeyName + " can't be used (" + error + "). Pick another key.";
+            UpdateControls();
+            return;
+        }
+        slot.Error = null;
+
+        if (existing == null)
+        {
+            bindings.Add(slot);
+            RebuildBindingRows();
+            BindingList.SelectedIndex = bindings.Count - 1;
+        }
+        else RebuildBindingRows();
+
+        SaveBindings();
+        transientMessage = (existing == null ? "Added " : "Updated ") + BindingLabel(binding) + ". Its key starts and stops it anywhere.";
+        UpdateControls();
+    }
+
+    void LoadBindingIntoWindow()
+    {
+        int index = BindingList.SelectedIndex;
+        if (index < 0 || index >= bindings.Count || IsBusy) return;
+        var binding = bindings[index].Binding;
+        ShowSetup(binding.Setup);
+        transientMessage = "Loaded " + BindingLabel(binding) + ". Change it, then press Replace to save it to the binding.";
+        UpdateControls();
+    }
+
+    void RemoveBinding()
+    {
+        int index = BindingList.SelectedIndex;
+        if (index < 0 || index >= bindings.Count) return;
+        var slot = bindings[index];
+        EndSession(slot.Session);
+        slot.Hotkey.Dispose();
+        slotsWithHandler.Remove(slot.Hotkey);
+        bindings.RemoveAt(index);
+        RebuildBindingRows();
+        BindingList.SelectedIndex = Math.Min(index, bindings.Count - 1);
+        SaveBindings();
+        transientMessage = "Removed " + BindingLabel(slot.Binding) + ".";
+        // The start/stop key may have been waiting on this binding's key.
+        RegisterHotkey();
+        UpdateControls();
     }
 
     // ---------------------------------------------------------------- settings
@@ -1064,6 +1390,7 @@ public partial class MainWindow : Window
         SetIndex(HotkeyBox, settings.GetInt("Hotkey", 5), HotkeyChoices.Length);
         TopMostBox.IsChecked = settings.GetBool("TopMost", false);
         LagCheckBox.IsChecked = settings.GetBool("LagCheck", true);
+        LagNotifyBox.IsChecked = settings.GetBool("LagNotify", true);
         Topmost = TopMostBox.IsChecked == true;
     }
 
@@ -1100,6 +1427,7 @@ public partial class MainWindow : Window
         settings.Set("Hotkey", HotkeyBox.SelectedIndex);
         settings.Set("TopMost", TopMostBox.IsChecked == true);
         settings.Set("LagCheck", LagCheckBox.IsChecked == true);
+        settings.Set("LagNotify", LagNotifyBox.IsChecked == true);
         settings.Save();
     }
 
@@ -1110,8 +1438,8 @@ public partial class MainWindow : Window
         pickTimer.Stop();
         trayHideTimer.Stop();
         uiTimer.Stop();
-        runner.Stop();
-        OnRunEnded();
+        foreach (var slot in bindings) { slot.Session.Stop(); slot.Hotkey.Dispose(); }
+        mainRun.Stop();
         notifier.Dispose();
         recorder.Dispose();
         SaveSettings();

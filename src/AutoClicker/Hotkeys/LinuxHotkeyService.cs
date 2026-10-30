@@ -27,6 +27,7 @@ sealed class LinuxHotkeyService : IHotkeyService
     Thread? thread;
     volatile bool running;
     byte grabbedKeycode;
+    uint grabbedModifiers;
     volatile bool grabFailed;
 
     public event Action? Pressed;
@@ -36,7 +37,7 @@ sealed class LinuxHotkeyService : IHotkeyService
         errorHandler = ErrorHandler;
     }
 
-    public bool TryRegister(Key key, out string? error)
+    public bool TryRegister(Key key, Modifiers modifiers, out string? error)
     {
         Unregister();
 
@@ -72,10 +73,11 @@ sealed class LinuxHotkeyService : IHotkeyService
             return false;
         }
 
+        grabbedModifiers = X11Modifiers(modifiers);
         grabFailed = false;
         var previousHandler = X11.XSetErrorHandler(errorHandler);
         foreach (var mask in IgnoredModifierMasks)
-            X11.XGrabKey(display, grabbedKeycode, mask, root, true, GrabModeAsync, GrabModeAsync);
+            X11.XGrabKey(display, grabbedKeycode, mask | grabbedModifiers, root, true, GrabModeAsync, GrabModeAsync);
         X11.XSync(display, false);
         X11.XSetErrorHandler(previousHandler);
 
@@ -94,6 +96,10 @@ sealed class LinuxHotkeyService : IHotkeyService
         error = null;
         return true;
     }
+
+    static uint X11Modifiers(Modifiers modifiers) =>
+        (modifiers.HasFlag(Modifiers.Shift) ? 1u : 0) | (modifiers.HasFlag(Modifiers.Control) ? 4u : 0) |
+        (modifiers.HasFlag(Modifiers.Alt) ? 8u /* Mod1 */ : 0) | (modifiers.HasFlag(Modifiers.Meta) ? 64u /* Mod4 */ : 0);
 
     int ErrorHandler(IntPtr display, IntPtr errorEvent)
     {
@@ -150,7 +156,7 @@ sealed class LinuxHotkeyService : IHotkeyService
     {
         if (display == IntPtr.Zero || grabbedKeycode == 0) return;
         foreach (var mask in IgnoredModifierMasks)
-            X11.XUngrabKey(display, grabbedKeycode, mask, root);
+            X11.XUngrabKey(display, grabbedKeycode, mask | grabbedModifiers, root);
         X11.XFlush(display);
         grabbedKeycode = 0;
     }

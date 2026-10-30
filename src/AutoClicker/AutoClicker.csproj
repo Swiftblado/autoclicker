@@ -29,6 +29,11 @@
     <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
 
+  <!-- Shown in the app by "What's new". -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../CHANGELOG.md" LogicalName="CHANGELOG.md" />
+  </ItemGroup>
+
   <!-- CI sets UpdatableBuild=true on release builds; only those may update themselves. -->
   <ItemGroup Condition="'$(UpdatableBuild)' == 'true'">
     <AssemblyMetadata Include="UpdatableBuild" Value="true" />

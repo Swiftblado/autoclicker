@@ -149,6 +149,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # This version's section of CHANGELOG.md, then the download table and first-run steps.
+          {
+            echo "## What's new"
+            awk -v tag="$GITHUB_REF_NAME" '
+              /^## / { on = ($2 == tag); next }
+              on
+            ' CHANGELOG.md
+            echo
+            cat .github/release-notes.md
+          } > notes.md
           gh release create "$GITHUB_REF_NAME" artifacts/* \
             --title "Auto Clicker $GITHUB_REF_NAME" \
-            --notes-file .github/release-notes.md
+            --notes-file notes.md

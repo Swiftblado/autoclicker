@@ -158,6 +158,17 @@ public static class KeyMap
 
     public static string Name(Key key) => Map.TryGetValue(key, out var codes) ? codes.Name : key.ToString();
 
+    /// <summary>A key with its modifiers, as people write it: "Ctrl+Shift+F7".</summary>
+    public static string ComboName(Key key, Modifiers modifiers)
+    {
+        string name = "";
+        if (modifiers.HasFlag(Modifiers.Control)) name += "Ctrl+";
+        if (modifiers.HasFlag(Modifiers.Shift)) name += "Shift+";
+        if (modifiers.HasFlag(Modifiers.Alt)) name += AltName + "+";
+        if (modifiers.HasFlag(Modifiers.Meta)) name += MetaName + "+";
+        return name + Name(key);
+    }
+
     public static Key ModifierKey(Modifiers modifier) => modifier switch
     {
         Modifiers.Control => Key.LeftCtrl,

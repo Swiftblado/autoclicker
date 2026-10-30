@@ -22,8 +22,9 @@ Nothing to install — each download is the whole app.
 - Keyboard: any key, with Ctrl/Shift/Alt/Cmd, and a set hold time
 - Macros: record what you do and replay it, or build a sequence of clicks, drags, keys and waits by hand — saved and reopened as `.json` files
 - Interval from 1 ms to 24 hours, optional random variation, repeat forever or a set number of times
-- Lag protection: slows down automatically when your computer or the target app falls behind, with a notification, and speeds back up once it clears
+- Lag protection: slows down automatically when your computer or the target app falls behind (including a game that stops redrawing), with an optional notification, and speeds back up once it clears
 - A global start/stop hotkey (F6 by default) that works from any window
+- Key bindings: give saved setups their own keys (like Ctrl+1), and let some run alongside each other
 - Updates itself: press **Update** under Options when a new version is out
 
 Recording real input is new and has only been tested on Windows by way of its building blocks — if it misbehaves on your system, please open an issue.

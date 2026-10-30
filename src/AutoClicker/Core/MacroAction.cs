@@ -36,7 +36,10 @@ public sealed class MacroAction : IInputAction
             {
                 if (cancel.IsCancellationRequested) return;
                 Volatile.Write(ref currentStepIndex, i);
-                RunStep(steps[i], cancel);
+                // Waits leave the mouse and keyboard free for another run; every other step
+                // finishes before another run's gesture starts.
+                if (steps[i].Kind == StepKind.Wait) RunStep(steps[i], cancel);
+                else lock (InputGate.Lock) RunStep(steps[i], cancel);
             }
         }
         finally

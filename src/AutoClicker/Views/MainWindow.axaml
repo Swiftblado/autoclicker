@@ -329,13 +329,48 @@
               <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Start/stop key:" Classes="label" />
                 <ComboBox x:Name="HotkeyBox" Width="92" SelectedIndex="5" />
+                <CheckBox x:Name="TopMostBox" Content="Keep window on top" Margin="24,0,0,0" />
               </StackPanel>
-              <CheckBox x:Name="TopMostBox" Content="Keep window on top" />
-              <CheckBox x:Name="LagCheckBox" Content="Slow down when lagging" IsChecked="True"
-                        ToolTip.Tip="Watches for your computer or the app you're automating falling behind, slows down until it recovers, and sends a notification when it does." />
+              <StackPanel Orientation="Horizontal">
+                <CheckBox x:Name="LagCheckBox" Content="Slow down when lagging" IsChecked="True"
+                          ToolTip.Tip="Watches for your computer or the app you're automating falling behind, and slows down until it recovers." />
+                <CheckBox x:Name="LagNotifyBox" Content="Notify me when it slows down" IsChecked="True" Margin="16,0,0,0"
+                          ToolTip.Tip="Sends a system notification when it slows down for lag and when it's back to full speed." />
+              </StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <Button x:Name="UpdateButton" Content="Check for updates" MinWidth="150" />
+                <Button x:Name="WhatsNewButton" Content="What's new" />
                 <TextBlock x:Name="VersionText" Classes="unit" VerticalAlignment="Center" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- ====================================================== key bindings -->
+        <StackPanel Spacing="2">
+          <TextBlock Text="Key bindings" Classes="sectionTitle" />
+          <Border x:Name="BindingsCard" Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock x:Name="BindingsEmpty" Classes="unit" Margin="0" TextWrapping="Wrap"
+                         Text="Give a setup its own key: set it up above, pick a key below, then Add. Its key starts and stops it from any window." />
+              <ListBox x:Name="BindingList" Height="96" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBox x:Name="BindingName" Width="120" Watermark="Name" MaxLength="40" />
+                <Border x:Name="BindingKeyCapture" Classes="keyCapture" Focusable="True" MinWidth="130"
+                        ToolTip.Tip="Click here, then press a key or a combination such as Ctrl+1.">
+                  <TextBlock x:Name="BindingKeyText" Text="Click to set key" Opacity="0.6" />
+                </Border>
+                <CheckBox x:Name="BindingAlongside" Content="Run alongside others"
+                          ToolTip.Tip="On: its key starts it even while something else runs. Off: it stops whatever is running first. When two runs both use the mouse, they take turns." />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button x:Name="BindingAddButton" Content="Add current setup"
+                        ToolTip.Tip="Saves everything set up on the left and in Timing under this name and key." />
+                <Button x:Name="BindingReplaceButton" Content="Replace"
+                        ToolTip.Tip="Replaces the selected binding with the current setup, name, key and option." />
+                <Button x:Name="BindingLoadButton" Content="Load into window"
+                        ToolTip.Tip="Shows the selected binding's setup on the left and in Timing, to change it. Use Replace to save the changes." />
+                <Button x:Name="BindingRemoveButton" Content="Remove" />
               </StackPanel>
             </StackPanel>
           </Border>

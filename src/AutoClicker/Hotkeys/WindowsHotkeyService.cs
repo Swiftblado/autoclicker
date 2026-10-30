@@ -18,6 +18,7 @@ sealed class WindowsHotkeyService : IHotkeyService
     const uint WM_HOTKEY = 0x0312;
     const uint WM_CLOSE = 0x0010;
     const uint WM_DESTROY = 0x0002;
+    const uint MOD_ALT = 0x0001, MOD_CONTROL = 0x0002, MOD_SHIFT = 0x0004, MOD_WIN = 0x0008;
     const uint MOD_NOREPEAT = 0x4000;
     static readonly IntPtr HWND_MESSAGE = new(-3);
 
@@ -35,7 +36,7 @@ sealed class WindowsHotkeyService : IHotkeyService
         wndProc = WindowProc;
     }
 
-    public bool TryRegister(Key key, out string? error)
+    public bool TryRegister(Key key, Modifiers modifiers, out string? error)
     {
         Unregister();
         if (!KeyMap.TryGet(key, out var codes))
@@ -45,7 +46,7 @@ sealed class WindowsHotkeyService : IHotkeyService
         }
 
         using var ready = new ManualResetEventSlim(false);
-        thread = new Thread(() => MessageLoop(codes.WindowsVk, ready))
+        thread = new Thread(() => MessageLoop(codes.WindowsVk, WindowsModifiers(modifiers), ready))
         {
             IsBackground = true,
             Name = "AutoClicker.Hotkey"
@@ -58,7 +59,7 @@ sealed class WindowsHotkeyService : IHotkeyService
         return registered;
     }
 
-    void MessageLoop(ushort vk, ManualResetEventSlim ready)
+    void MessageLoop(ushort vk, uint modifierFlags, ManualResetEventSlim ready)
     {
         var wndClass = new WNDCLASSEX
         {
@@ -84,7 +85,7 @@ sealed class WindowsHotkeyService : IHotkeyService
                 return;
             }
 
-            registered = RegisterHotKey(hwnd, HotkeyId, MOD_NOREPEAT, vk);
+            registered = RegisterHotKey(hwnd, HotkeyId, MOD_NOREPEAT | modifierFlags, vk);
             if (!registered)
                 registerError = "another app is already using it";
         }
@@ -105,6 +106,10 @@ sealed class WindowsHotkeyService : IHotkeyService
         hwnd = IntPtr.Zero;
         registered = false;
     }
+
+    static uint WindowsModifiers(Modifiers modifiers) =>
+        (modifiers.HasFlag(Modifiers.Control) ? MOD_CONTROL : 0) | (modifiers.HasFlag(Modifiers.Shift) ? MOD_SHIFT : 0) |
+        (modifiers.HasFlag(Modifiers.Alt) ? MOD_ALT : 0) | (modifiers.HasFlag(Modifiers.Meta) ? MOD_WIN : 0);
 
     IntPtr WindowProc(IntPtr window, uint msg, IntPtr wParam, IntPtr lParam)
     {
