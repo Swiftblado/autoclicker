@@ -73,6 +73,7 @@ public sealed class Runner
                 if (stopRequested) break;
                 long done = Interlocked.Increment(ref count);
                 if (repeat > 0 && done >= repeat) break;
+                if (action is MacroAction { EndRun: true }) break;   // a check step said stop
 
                 double delay = intervalMs;
                 if (jitterMs > 0) delay += rng.Next(-jitterMs, jitterMs + 1);

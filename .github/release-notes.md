@@ -21,6 +21,7 @@ Nothing to install — each download is the whole app.
 - Drags: hold a button and glide between two points over a set time
 - Keyboard: any key, with Ctrl/Shift/Alt/Cmd, and a set hold time
 - Macros: record what you do and replay it, or build a sequence of clicks, drags, keys and waits by hand — saved and reopened as `.json` files
+- Screen checks in macros: look for a color (hex code, color wheel or dropper), a pattern of several colors, or an image, then click it, jump to another step or stop
 - Interval from 1 ms to 24 hours, optional random variation, repeat forever or a set number of times
 - Lag protection: slows down automatically when your computer or the target app falls behind (including a game that stops redrawing), with an optional notification, and speeds back up once it clears
 - A global start/stop hotkey (F6 by default) that works from any window

@@ -41,6 +41,8 @@ public partial class MainWindow : Window
     /// </summary>
     static readonly TimeSpan ModifierReleaseTime = TimeSpan.FromMilliseconds(300);
     const int RecordCountdownSeconds = 2;
+    /// <summary>Position of "Check screen" in the step type box.</summary>
+    const int CheckStepType = 4;
     const string CurrentMacroFile = "current.json";
 
     /// <summary>How long the Windows tray icon lingers after the "back to full speed" notification.</summary>
@@ -145,8 +147,9 @@ public partial class MainWindow : Window
         StepDragToPick.Click += (_, _) => StartPick(StepDragToX, StepDragToY, StepDragToPick);
 
         RecordButton.Click += (_, _) => ToggleRecording();
-        StepAddButton.Click += (_, _) => AddStep(replaceSelected: false);
-        StepReplaceButton.Click += (_, _) => AddStep(replaceSelected: true);
+        StepAddButton.Click += async (_, _) => await AddStepAsync(replaceSelected: false);
+        StepReplaceButton.Click += async (_, _) => await AddStepAsync(replaceSelected: true);
+        StepList.DoubleTapped += async (_, _) => await EditSelectedCheckAsync();
         StepUpButton.Click += (_, _) => MoveStep(-1);
         StepDownButton.Click += (_, _) => MoveStep(1);
         StepDeleteButton.Click += (_, _) => DeleteStep();
@@ -277,6 +280,7 @@ public partial class MainWindow : Window
         StepDragPanel.IsVisible = StepTypeBox.SelectedIndex == 1;
         StepKeyPanel.IsVisible = StepTypeBox.SelectedIndex == 2;
         StepWaitPanel.IsVisible = StepTypeBox.SelectedIndex == 3;
+        StepCheckPanel.IsVisible = StepTypeBox.SelectedIndex == CheckStepType;
 
         UpdateButton.IsEnabled = AppVersion.IsUpdatable && !checkingForUpdate && updateProgress == null;
         UpdateButton.Content = updateProgress is { } fraction ? "Updating… " + (int)(fraction * 100) + "%"
@@ -771,13 +775,45 @@ public partial class MainWindow : Window
         }
     }
 
-    void AddStep(bool replaceSelected)
+    async System.Threading.Tasks.Task AddStepAsync(bool replaceSelected)
     {
         validationMessage = null;
-        var step = BuildStepFromEditor();
-        if (step == null) { UpdateControls(); return; }
-
         int selected = StepList.SelectedIndex;
+        bool replacing = replaceSelected && selected >= 0 && selected < macro.Steps.Count;
+
+        MacroStep? step;
+        if (StepTypeBox.SelectedIndex == CheckStepType)
+        {
+            // Replacing a check edits it; replacing anything else starts a fresh check.
+            var existing = replacing && macro.Steps[selected].Kind == StepKind.Check ? macro.Steps[selected] : null;
+            step = await CheckStepWindow.EditAsync(this, backend, existing?.Clone(),
+                replacing ? macro.Steps.Count : macro.Steps.Count + 1);
+            if (step == null) return;
+        }
+        else
+        {
+            step = BuildStepFromEditor();
+            if (step == null) { UpdateControls(); return; }
+        }
+        StoreStep(step, replacing ? selected : -1);
+    }
+
+    /// <summary>Double-clicking a check step opens it for editing.</summary>
+    async System.Threading.Tasks.Task EditSelectedCheckAsync()
+    {
+        int selected = StepList.SelectedIndex;
+        if (IsBusy || IsRecording || selected < 0 || selected >= macro.Steps.Count) return;
+        if (macro.Steps[selected].Kind != StepKind.Check) return;
+        StepTypeBox.SelectedIndex = CheckStepType;
+        var step = await CheckStepWindow.EditAsync(this, backend, macro.Steps[selected].Clone(), macro.Steps.Count);
+        if (step != null) StoreStep(step, selected);
+    }
+
+    /// <summary>Puts <paramref name="step"/> in place of step <paramref name="replace"/>, or at the end when -1.</summary>
+    void StoreStep(MacroStep step, int replace)
+    {
+        int selected = replace;
+        bool replaceSelected = replace >= 0;
         if (replaceSelected && selected >= 0 && selected < macro.Steps.Count)
         {
             macro.Steps[selected] = step;
@@ -799,6 +835,8 @@ public partial class MainWindow : Window
         if (index < 0 || target < 0 || target >= macro.Steps.Count) return;
 
         (macro.Steps[index], macro.Steps[target]) = (macro.Steps[target], macro.Steps[index]);
+        int a = index + 1, b = target + 1;
+        Macro.Renumber(macro.Steps, n => n == a ? b : n == b ? a : n);
         RebuildStepRows(target);
         SaveCurrentMacro();
         UpdateControls();
@@ -809,6 +847,9 @@ public partial class MainWindow : Window
         int index = StepList.SelectedIndex;
         if (index < 0 || index >= macro.Steps.Count) return;
         macro.Steps.RemoveAt(index);
+        // Jumps to later steps follow them down; a jump to the deleted step lands on the one after it.
+        int removed = index + 1;
+        Macro.Renumber(macro.Steps, n => n > removed ? n - 1 : n);
         RebuildStepRows(Math.Min(index, macro.Steps.Count - 1));
         SaveCurrentMacro();
         UpdateControls();

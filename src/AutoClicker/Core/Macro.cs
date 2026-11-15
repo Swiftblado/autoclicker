@@ -59,6 +59,44 @@ public sealed class Macro
         return clone;
     }
 
+    /// <summary>
+    /// After steps move or go, keeps every check's "go to step" pointing at the same step.
+    /// <paramref name="map"/> takes an old step number (from 1) to its new one.
+    /// </summary>
+    public static void Renumber(List<MacroStep> steps, Func<int, int> map)
+    {
+        foreach (var step in steps)
+        {
+            if (step.Kind != StepKind.Check) continue;
+            step.FoundStep = Math.Clamp(map(step.FoundStep), 1, Math.Max(1, steps.Count));
+            step.MissingStep = Math.Clamp(map(step.MissingStep), 1, Math.Max(1, steps.Count));
+        }
+    }
+
+    /// <summary>What's wrong with a check step, in words for the user; null when it can run.</summary>
+    public static string? CheckProblem(List<MacroStep> steps)
+    {
+        for (int i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            if (step.Kind != StepKind.Check) continue;
+            string which = "Step " + (i + 1) + " ";
+            switch (step.Target)
+            {
+                case CheckTarget.Color when ColorMatch.Normalize(step.Color) == null:
+                    return which + "has no valid color. Use a hex code like #FF8800.";
+                case CheckTarget.Colors when step.Points.Count == 0:
+                    return which + "has no colors to look for. Add at least one point.";
+                case CheckTarget.Image when string.IsNullOrEmpty(step.ImagePng):
+                    return which + "has no image. Capture one or load a PNG.";
+            }
+            if (step.OnFound == CheckBranch.GoTo && (step.FoundStep < 1 || step.FoundStep > steps.Count) ||
+                step.OnMissing == CheckBranch.GoTo && (step.MissingStep < 1 || step.MissingStep > steps.Count))
+                return which + "goes to a step that doesn't exist.";
+        }
+        return null;
+    }
+
     /// <summary>How long one pass through the macro takes: every step's own time cost, summed.</summary>
     public int TotalDurationMs
     {

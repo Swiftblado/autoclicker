@@ -5,6 +5,7 @@
 
   <Application.Styles>
     <FluentTheme />
+    <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
 
     <!-- Section card: a titled box grouping related settings. -->
     <!-- Neutral translucent colours so the cards read correctly in both light and dark themes. -->

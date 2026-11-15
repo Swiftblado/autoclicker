@@ -5,7 +5,7 @@ A small, portable auto clicker and key presser for **Windows, macOS and Linux**.
 - **Mouse clicks**: left, right or middle button, single or double click, at the cursor or at a fixed spot (use **Pick** to grab a spot). A **full click** (the default) holds the button down for 20, 35 or 50 ms like a real press, or for any time from 0 to 1000 ms with **Custom…**; a **half click** lets go instantly, like a light tap on a touchpad. A custom hold under 17 ms (one frame at 60 fps) counts as a half click. The **?** next to the hold explains which apps and games register short clicks. Macro click steps have the same choice.
 - **Mouse drags**: hold a button down and glide from one point to another over a set time.
 - **Key presses**: any key, optionally with Ctrl, Shift, Alt/Option or Win/Cmd/Super, and a set hold time.
-- **Macros**: record what you do and replay it, or build a sequence by hand — clicks, drags, key presses and waits. Reorder or delete steps, and save macros as `.json` files to reuse later.
+- **Macros**: record what you do and replay it, or build a sequence by hand — clicks, drags, key presses, waits, and **Check screen** steps that look for a color, a pattern of colors or an image and then click it, jump to another step or stop. Reorder or delete steps, and save macros as `.json` files to reuse later.
 - **Timing**: an interval from 1 ms up to 24 hours, optional random variation (±ms), and either repeat until stopped or a set number of times.
 - **Global hotkey**: F6 by default (F1–F12 selectable) starts and stops it from any window.
 - **Key bindings**: save a setup (clicks, drags, key presses or a macro, with its timing) under a name and its own key or combination, like F7 or Ctrl+1; that key starts and stops it from any window. Turn on **Run alongside others** for bindings that may run at the same time; when two runs both need the mouse they take turns, so a click never lands in the middle of another run's click or drag. Bindings are kept in `bindings.json` next to the settings file.
@@ -48,6 +48,21 @@ Pick **Macro** from the dropdown, then either:
 Recording keeps the shape of what you did rather than a literal trace: a press and release in one spot becomes a click, a press and release apart becomes a drag in a straight line between them, a key with modifiers held becomes one step, and the pauses in between become waits. Cursor movements on their own aren't recorded, since every click and drag carries its own coordinates.
 
 **Save...** and **Open...** keep macros as `.json` files (in `Macros` next to the settings file by default). Whatever is in the list is remembered between runs, and the **Repeat the macro** section controls how often the whole sequence replays.
+
+#### Check screen steps
+
+A **Check screen** step looks at the screen and decides what the macro does next. Choose it under **Add step** and press **Add**. To change a check later, double-click it in the list (or select it and press **Replace**).
+
+- **Look for**:
+  - **A color**: type a hex code (`#FF8800`), choose one on the color wheel, or use **Dropper**: hover over any pixel and its color is taken after 3 seconds, along with its position.
+  - **Several colors**: a list of points, each with its own color, all of which must match. **Pick & add** takes a point and its color from under the cursor. "Exactly at these points" checks each one where it is. "As a pattern" keeps the spacing between the points and finds that arrangement anywhere in an area or on the screen. The first point counts as where it was found.
+  - **An image**: **Capture from screen…** dims the screen so you can drag a box around what to look for, or **Load PNG…** opens a picture (transparent parts don't have to match). The image is saved inside the macro file.
+- **Where**: one point (colors only), an area (drag it out with **Drag area…** or type it in), or anywhere on screen. Smaller areas are faster.
+- **Tolerance**: how far each of red, green and blue may be off, 0–255 (default 10; 0 means exact). Images also tolerate up to 2% of their pixels not matching, so a blinking cursor or a small animation doesn't stop a match.
+- **When**: **Check once**, or **Wait until it appears** (it looks again every 50 ms) with an optional time limit.
+- **Then**: if found, optionally click on it (the middle of an image, the matching pixel, or the pattern's first point). Then continue, **go to step** N, or **stop the macro**. You choose separately what happens when it isn't found or doesn't appear in time. Going to an earlier step makes a loop. Going to a later step skips the ones in between. Step numbers update when steps are moved or deleted.
+
+**Test now** in the check's window runs it right away and tells you where it was found and how long the search took. macOS needs the Screen Recording permission for checks. On Linux they need X11.
 
 ### Key bindings
 
@@ -94,12 +109,14 @@ dotnet publish src/AutoClicker/AutoClicker.csproj -c Release -r linux-x64 \
 ```
 src/AutoClicker/
   Core/      Runner.cs (timing loop), Settings.cs, InputActions.cs,
-             Macro.cs + MacroStep.cs + MacroAction.cs (macros)
+             Macro.cs + MacroStep.cs + MacroAction.cs (macros),
+             ScreenCheck.cs + ImageTemplate.cs (color/image checks)
              LagGovernor.cs + LagMonitor.cs (slowing down for lag),
              RunSetup.cs + RunSession.cs (one run each), KeyBinding.cs
   Input/     one backend per OS, behind IInputBackend:
              Windows SendInput · macOS CGEvent · Linux XTest;
-             ScreenProbe.cs watches the screen under the cursor for lag
+             ScreenProbe.cs watches the screen under the cursor for lag;
+             ScreenCapture.cs grabs pixels for check steps
   Hotkeys/   global hotkey per OS:
              RegisterHotKey · Carbon RegisterEventHotKey · X11 XGrabKey
   Recording/ input capture per OS, behind IInputRecorder:

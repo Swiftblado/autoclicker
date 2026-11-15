@@ -182,11 +182,12 @@
                 <StackPanel Spacing="8">
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="Add step:" Classes="label" Margin="0" />
-                    <ComboBox x:Name="StepTypeBox" Width="110" SelectedIndex="0">
+                    <ComboBox x:Name="StepTypeBox" Width="140" SelectedIndex="0">
                       <ComboBoxItem>Click</ComboBoxItem>
                       <ComboBoxItem>Drag</ComboBoxItem>
                       <ComboBoxItem>Key</ComboBoxItem>
                       <ComboBoxItem>Wait</ComboBoxItem>
+                      <ComboBoxItem>Check screen</ComboBoxItem>
                     </ComboBox>
                     <Button x:Name="StepAddButton" Content="Add" Width="70" />
                     <Button x:Name="StepReplaceButton" Content="Replace" Width="86" />
@@ -274,6 +275,9 @@
                                    Increment="100" FormatString="0" />
                     <TextBlock Text="ms" Classes="unit" />
                   </StackPanel>
+
+                  <TextBlock x:Name="StepCheckPanel" IsVisible="False" TextWrapping="Wrap" Opacity="0.8" MaxWidth="520"
+                             Text="Looks for a color, several colors, or an image on screen, then clicks it, jumps to a step, or stops. Add sets up a new check; Replace edits the selected one (or double-click it)." />
                 </StackPanel>
               </Border>
             </StackPanel>

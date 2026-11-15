@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json.Serialization;
 using AutoClicker.Input;
 using Avalonia;
@@ -18,7 +20,55 @@ public enum StepKind
     /// <summary>Press and release a key, with optional modifiers held around it.</summary>
     Key,
     /// <summary>Do nothing for a while.</summary>
-    Wait
+    Wait,
+    /// <summary>Look at the screen for a color, a pattern of colors, or an image, and act on what's there.</summary>
+    Check
+}
+
+/// <summary>What a <see cref="StepKind.Check"/> looks for.</summary>
+public enum CheckTarget
+{
+    /// <summary>One color, given as a hex code.</summary>
+    Color,
+    /// <summary>Several colors at set points. All of them must match.</summary>
+    Colors,
+    /// <summary>A picture: captured off the screen or loaded from a file.</summary>
+    Image
+}
+
+/// <summary>Where a check looks.</summary>
+public enum CheckArea
+{
+    /// <summary>
+    /// Color: the one pixel at From. Colors: exactly at each point's own coordinates.
+    /// Not used for images.
+    /// </summary>
+    Point,
+    /// <summary>Anywhere inside the rectangle AreaX, AreaY, AreaWidth, AreaHeight.</summary>
+    Area,
+    /// <summary>Anywhere on screen.</summary>
+    Screen
+}
+
+/// <summary>Where a macro goes after a check.</summary>
+public enum CheckBranch
+{
+    /// <summary>On to the following step.</summary>
+    Next,
+    /// <summary>To a chosen step, earlier or later.</summary>
+    GoTo,
+    /// <summary>End the run, like pressing Stop.</summary>
+    Stop
+}
+
+/// <summary>One point of a multi-color check: a screen position and the color expected there.</summary>
+public sealed class ColorPoint
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public string Color { get; set; } = "#000000";
+
+    public ColorPoint Clone() => (ColorPoint)MemberwiseClone();
 }
 
 /// <summary>One action in a macro. Plain data so it round-trips through JSON.</summary>
@@ -50,6 +100,39 @@ public sealed class MacroStep
 
     /// <summary>Drag travel time, key hold time, or wait length — depending on <see cref="Kind"/>.</summary>
     public int DurationMs { get; set; }
+
+    // Check
+    public CheckTarget Target { get; set; }
+    public CheckArea Where { get; set; }
+    /// <summary>Color checks: "#RRGGBB".</summary>
+    public string Color { get; set; } = "#FF0000";
+    /// <summary>
+    /// Multi-color checks. Searched for in an area they keep their spacing, and the first point
+    /// is where the pattern counts as found.
+    /// </summary>
+    public List<ColorPoint> Points { get; set; } = new();
+    /// <summary>Image checks: the picture, as a base64 PNG.</summary>
+    public string? ImagePng { get; set; }
+    public int AreaX { get; set; }
+    public int AreaY { get; set; }
+    public int AreaWidth { get; set; }
+    public int AreaHeight { get; set; }
+    /// <summary>How far each of red, green and blue may be off and still match, 0–255.</summary>
+    public int Tolerance { get; set; } = ColorMatch.DefaultTolerance;
+    /// <summary>Keep looking until it shows up, rather than looking once.</summary>
+    public bool WaitUntilFound { get; set; }
+    /// <summary>With <see cref="WaitUntilFound"/>: give up after this long. 0 waits for as long as it takes.</summary>
+    public int TimeoutMs { get; set; } = 10000;
+    /// <summary>Click <see cref="Button"/> on whatever was found.</summary>
+    public bool ClickFound { get; set; }
+    public CheckBranch OnFound { get; set; } = CheckBranch.Next;
+    /// <summary>Step number (counted from 1) to go to when found, for <see cref="CheckBranch.GoTo"/>.</summary>
+    public int FoundStep { get; set; } = 1;
+    public CheckBranch OnMissing { get; set; } = CheckBranch.Next;
+    /// <summary>Step number (counted from 1) to go to when not found.</summary>
+    public int MissingStep { get; set; } = 1;
+
+    [JsonIgnore] public PixelRect Area => new(AreaX, AreaY, AreaWidth, AreaHeight);
 
     [JsonIgnore] public PixelPoint From => new(FromX, FromY);
     [JsonIgnore] public PixelPoint To => new(ToX, ToY);
@@ -106,10 +189,51 @@ public sealed class MacroStep
             case StepKind.Wait:
                 return "Wait " + Time(DurationMs);
 
+            case StepKind.Check:
+                return DescribeCheck();
+
             default:
                 return Kind.ToString();
         }
     }
+
+    string DescribeCheck()
+    {
+        string what = Target switch
+        {
+            CheckTarget.Color => Color.ToUpperInvariant(),
+            CheckTarget.Colors => Points.Count + (Points.Count == 1 ? " color" : " colors"),
+            _ => "image"
+        };
+        string where = (Target, Where) switch
+        {
+            (CheckTarget.Color, CheckArea.Point) => " at " + Point(From),
+            (CheckTarget.Colors, CheckArea.Point) => " at their points",
+            (_, CheckArea.Screen) => " anywhere on screen",
+            _ => " in " + Point(new PixelPoint(AreaX, AreaY)) + " " + AreaWidth + "×" + AreaHeight
+        };
+
+        string found = Branch(OnFound, FoundStep);
+        if (ClickFound) found = Button.ToString().ToLowerInvariant() + " click it" + (found == "" ? "" : ", " + found);
+        if (found == "") found = "continue";
+        string missing = Branch(OnMissing, MissingStep);
+        if (missing == "") missing = "continue";
+
+        if (WaitUntilFound)
+        {
+            string limit = TimeoutMs > 0 ? " (up to " + Time(TimeoutMs) + ")" : "";
+            return "Wait for " + what + where + limit + " → " + found +
+                   (TimeoutMs > 0 ? "; not seen → " + missing : "");
+        }
+        return "If " + what + where + " → " + found + "; else → " + missing;
+    }
+
+    static string Branch(CheckBranch branch, int step) => branch switch
+    {
+        CheckBranch.GoTo => "go to step " + step,
+        CheckBranch.Stop => "stop",
+        _ => ""
+    };
 
     string DescribeModifiers()
     {
@@ -129,5 +253,10 @@ public sealed class MacroStep
             ? (ms / 1000.0).ToString("0.##", CultureInfo.CurrentCulture) + " s"
             : ms.ToString(CultureInfo.CurrentCulture) + " ms";
 
-    public MacroStep Clone() => (MacroStep)MemberwiseClone();
+    public MacroStep Clone()
+    {
+        var clone = (MacroStep)MemberwiseClone();
+        clone.Points = Points.Select(point => point.Clone()).ToList();
+        return clone;
+    }
 }

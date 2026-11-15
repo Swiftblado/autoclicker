@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.6.0 (November 15, 2026)
+
+- New macro step: Check screen. It looks for something on screen and decides what the macro does next.
+- Look for a color: type a hex code, choose it on a color wheel, or use the Dropper to take the color (and position) of any pixel on screen.
+- Look for several colors at once: each point has its own color and all must match, either exactly where they are or as a pattern found anywhere in an area.
+- Look for an image: drag a box over the screen to capture it, or load a PNG. Transparent parts of a PNG are ignored, and small differences like a blinking cursor still match.
+- Look at one point, inside an area, or anywhere on screen, with an adjustable color tolerance.
+- Check once, or wait until it appears, with an optional time limit.
+- When found, optionally click on it, then continue, go to another step, or stop the macro. Choose separately what happens when it isn't found. Going back to an earlier step makes a loop.
+- Test now shows straight away whether a check finds its target, where, and how long the search took.
+- macOS needs the Screen Recording permission for screen checks.
+
 ## v2.5.0 (October 30, 2026)
 
 - Key bindings: save the current setup (clicks, drags, key presses or a macro, with its timing) under a name and give it its own key or key combination, like F7 or Ctrl+1. Pressing that key from any window starts or stops it.
