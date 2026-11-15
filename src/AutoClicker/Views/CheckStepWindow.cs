@@ -118,6 +118,7 @@ sealed class CheckStepWindow : Window
         Title = "Check the screen";
         Icon = owner.Icon;
         ShowInTaskbar = false;
+        CanMinimize = false;
         CanResize = false;
         SizeToContent = SizeToContent.WidthAndHeight;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -355,7 +356,11 @@ sealed class CheckStepWindow : Window
         testButton.Click += async (_, _) => await TestAsync();
 
         pickTimer.Tick += (_, _) => PickTick();
-        Closed += (_, _) => pickTimer.Stop();
+        Closed += (_, _) =>
+        {
+            pickTimer.Stop();
+            if (movedAway) owner.Position = ownerPosition;
+        };
     }
 
     void ShowPoint(PixelPoint at, string? hex)
@@ -519,6 +524,8 @@ sealed class CheckStepWindow : Window
         pickLive = live;
         pickDone = done;
         pickTicks = PickSeconds * 1000 / (int)pickTimer.Interval.TotalMilliseconds;
+        // Out of the way, so the point under the cursor is whatever's behind the windows.
+        MoveAway();
         pickTimer.Start();
         PickTick();
     }
@@ -534,6 +541,7 @@ sealed class CheckStepWindow : Window
             pickTimer.Stop();
             pickButton.Content = pickButtonText;
             pickButton = null;
+            MoveBack();
             pickDone?.Invoke(at, hex);
             if (hex == null) ShowProblem(ScreenCaptureMissing);
             return;
@@ -632,12 +640,7 @@ sealed class CheckStepWindow : Window
     /// </summary>
     async Task<T> WithWindowsHidden<T>(Func<Task<T>> work)
     {
-        var ownPosition = Position;
-        var ownerPosition = owner.Position;
-        var away = new PixelPoint(-30000, -30000);
-        movedAway = true;
-        owner.Position = away;
-        Position = away;
+        MoveAway();
         await Task.Delay(150);   // let the move reach the screen
         try
         {
@@ -645,10 +648,30 @@ sealed class CheckStepWindow : Window
         }
         finally
         {
-            owner.Position = ownerPosition;
-            Position = ownPosition;
-            movedAway = false;
-            Activate();
+            MoveBack();
         }
+    }
+
+    PixelPoint ownPosition, ownerPosition;
+
+    /// <summary>Parks this window and the main one off screen. <see cref="MoveBack"/> undoes it.</summary>
+    void MoveAway()
+    {
+        if (movedAway) return;
+        ownPosition = Position;
+        ownerPosition = owner.Position;
+        movedAway = true;
+        var away = new PixelPoint(-30000, -30000);
+        owner.Position = away;
+        Position = away;
+    }
+
+    void MoveBack()
+    {
+        if (!movedAway) return;
+        owner.Position = ownerPosition;
+        Position = ownPosition;
+        movedAway = false;
+        Activate();
     }
 }

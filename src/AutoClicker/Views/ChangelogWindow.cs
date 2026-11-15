@@ -40,6 +40,7 @@ static class ChangelogWindow
             Width = 560,
             Height = 600,
             ShowInTaskbar = false,
+            CanMinimize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new DockPanel
             {

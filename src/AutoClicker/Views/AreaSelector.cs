@@ -70,6 +70,7 @@ static class AreaSelector
                 SystemDecorations = SystemDecorations.None,
                 Topmost = true,
                 ShowInTaskbar = false,
+            CanMinimize = false,
                 CanResize = false,
                 Background = Brushes.Transparent,
                 TransparencyLevelHint = [WindowTransparencyLevel.Transparent],

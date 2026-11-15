@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.6.1 (November 15, 2026)
+
+- In a screen check, Dropper, Pick and Pick & add now hide the app's windows during the countdown, so they're never in the way of what you're picking.
+- Only the main window can be minimized. The screen check, What's new and update windows can't, so they can't get lost behind it.
+
 ## v2.6.0 (November 15, 2026)
 
 - New macro step: Check screen. It looks for something on screen and decides what the macro does next.
