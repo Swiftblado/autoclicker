@@ -1092,7 +1092,7 @@ public partial class MainWindow : Window
                 x.Value = Math.Clamp(at.X, (int)x.Minimum, (int)x.Maximum);
                 y.Value = Math.Clamp(at.Y, (int)y.Minimum, (int)y.Maximum);
             }
-            Show(await ScreenPicker.PickAsync(backend, Show));
+            Show((await ScreenPicker.PickAsync(backend, Show)).Point);
         }
         finally
         {

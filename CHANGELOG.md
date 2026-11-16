@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.7.1 (November 16, 2026)
+
+- Fixed: Dropper and Pick & add could take the color of the Auto Clicker window itself instead of what was under it. The color is now read while the windows are still hidden.
+- On Windows, the app's windows are also left out of screen captures while picking, so no dropper can ever see them.
+
 ## v2.7.0 (November 15, 2026)
 
 - Every way of picking something on the screen now hides the app's windows while you pick: Pick, Dropper, Pick & add, Drag area and Capture from screen.

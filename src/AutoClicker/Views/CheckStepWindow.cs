@@ -509,8 +509,9 @@ sealed class CheckStepWindow : Window
         picking = true;
         try
         {
-            var at = await ScreenPicker.PickAsync(backend, p => live(p, ScreenCapture.ColorAt(p)));
-            string? hex = ScreenCapture.ColorAt(at);
+            // The color comes from the picker, read while the windows were hidden. Reading it
+            // here would be too late: the windows are back, and it would be their own color.
+            var (at, hex) = await ScreenPicker.PickAsync(backend, p => live(p, ScreenCapture.ColorAt(p)));
             done(at, hex);
             ShowProblem(hex == null ? ScreenCaptureMissing : null);
         }

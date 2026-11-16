@@ -31,10 +31,11 @@ static class ScreenPicker
     const int TickMs = 50;
 
     /// <summary>
-    /// Waits out the countdown (or a click) with the app's windows hidden, then returns the spot.
+    /// Waits out the countdown (or a click) with the app's windows hidden, then returns the spot
+    /// and its color, both taken while the windows were still out of the way.
     /// <paramref name="live"/> runs as the mouse moves, to show where it would pick.
     /// </summary>
-    public static async Task<PixelPoint> PickAsync(IInputBackend backend, Action<PixelPoint>? live = null)
+    public static async Task<PickResult> PickAsync(IInputBackend backend, Action<PixelPoint>? live = null)
     {
         using var hidden = WindowHider.Hide();
         var bubble = new TimerBubble();
@@ -66,8 +67,13 @@ static class ScreenPicker
         await Task.Delay(80);
         var picked = clickedAt ?? backend.GetCursorPosition();
         live?.Invoke(picked);
-        return picked;
+        // Read the color now, while the windows are still hidden. Once this returns they're back,
+        // and a read at the same spot could see the app's own window instead of what's under it.
+        return new PickResult(picked, ScreenCapture.ColorAt(picked));
     }
+
+    /// <summary>A picked spot and the color that was on screen there ("#RRGGBB"), or null if unreadable.</summary>
+    public readonly record struct PickResult(PixelPoint Point, string? Color);
 
     /// <summary>The countdown next to the mouse: a small, borderless window that never takes focus.</summary>
     sealed class TimerBubble : Window
@@ -140,10 +146,34 @@ static class WindowHider
             var windows = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Windows
                           ?? (IReadOnlyList<Window>)[];
             parked = windows.Where(w => w.IsVisible).Select(w => (w, w.Position)).ToList();
-            foreach (var (window, _) in parked) window.Position = Away;
+            foreach (var (window, _) in parked)
+            {
+                window.Position = Away;
+                ExcludeFromCapture(window, true);
+            }
         }
         return new Restorer();
     }
+
+    /// <summary>
+    /// Belt and braces on Windows: while hidden, the windows are also left out of screen grabs,
+    /// so no dropper can read their pixels even if one lingers on screen for a moment.
+    /// </summary>
+    static void ExcludeFromCapture(Window window, bool exclude)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try
+        {
+            var handle = window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            if (handle != IntPtr.Zero) SetWindowDisplayAffinity(handle, exclude ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
+        }
+        catch (Exception) { /* older Windows: moving the window away is enough */ }
+    }
+
+    const uint WDA_NONE = 0, WDA_EXCLUDEFROMCAPTURE = 0x11;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool SetWindowDisplayAffinity(IntPtr window, uint affinity);
 
     sealed class Restorer : IDisposable
     {
@@ -155,7 +185,10 @@ static class WindowHider
             done = true;
             if (--depth > 0) return;
             foreach (var (window, position) in parked)
+            {
+                ExcludeFromCapture(window, false);
                 if (window.IsVisible) window.Position = position;
+            }
             // The topmost-most recent (a dialog, usually) gets the keyboard back.
             parked.LastOrDefault().Window?.Activate();
             parked = [];
