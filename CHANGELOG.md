@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.7.0 (November 15, 2026)
+
+- Every way of picking something on the screen now hides the app's windows while you pick: Pick, Dropper, Pick & add, Drag area and Capture from screen.
+- A countdown next to the mouse shows how much time is left to pick.
+- New option "Time to pick a spot": 1 to 60 seconds, 3 by default.
+- New option "A click picks right away", off by default: a left click picks at once instead of waiting for the countdown, and that click doesn't reach whatever is under the mouse.
+- Drag-a-box picking now has the same time limit: if you haven't started a box when time runs out, it cancels. A box you're dragging is never cut off.
+
 ## v2.6.1 (November 15, 2026)
 
 - In a screen check, Dropper, Pick and Pick & add now hide the app's windows during the countdown, so they're never in the way of what you're picking.

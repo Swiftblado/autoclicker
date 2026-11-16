@@ -66,7 +66,6 @@ public partial class MainWindow : Window
 
     readonly DispatcherTimer uiTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     readonly DispatcherTimer countdownTimer = new() { Interval = TimeSpan.FromSeconds(1) };
-    readonly DispatcherTimer pickTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
     readonly DispatcherTimer recordCountdownTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     readonly DispatcherTimer trayHideTimer = new() { Interval = TrayLingerTime };
 
@@ -84,9 +83,7 @@ public partial class MainWindow : Window
     Modifiers bindingModifiers = Modifiers.None;
     int countdown;
     int recordCountdown;
-    int pickTicks;
-    NumericUpDown? pickTargetX, pickTargetY;
-    Button? pickTargetButton;
+    bool picking;
     bool wasRunning;
     bool wasAvailable = true;
     long lastCount;
@@ -135,6 +132,8 @@ public partial class MainWindow : Window
         RepeatLimited.IsCheckedChanged += OnSettingChanged;
         TopMostBox.IsCheckedChanged += (_, _) => Topmost = TopMostBox.IsChecked == true;
         LagCheckBox.IsCheckedChanged += OnSettingChanged;
+        PickSecondsBox.ValueChanged += (_, _) => ApplyPickSettings();
+        PickOnClickBox.IsCheckedChanged += (_, _) => ApplyPickSettings();
         HotkeyBox.SelectionChanged += (_, _) => { RegisterHotkey(); UpdateControls(); };
 
         StartButton.Click += (_, _) => BeginCountdown();
@@ -177,7 +176,6 @@ public partial class MainWindow : Window
 
         uiTimer.Tick += (_, _) => RefreshState();
         countdownTimer.Tick += (_, _) => CountdownTick();
-        pickTimer.Tick += (_, _) => PickTick();
         recordCountdownTimer.Tick += (_, _) => RecordCountdownTick();
         recorder.Recorded += OnRecorded;
         trayHideTimer.Tick += (_, _) => { trayHideTimer.Stop(); notifier.Hide(); };
@@ -1072,39 +1070,34 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- pick a point
 
-    void StartPick(NumericUpDown x, NumericUpDown y, Button button)
+    /// <summary>The Options card's pick settings, handed to every picker.</summary>
+    void ApplyPickSettings()
     {
-        pickTargetX = x;
-        pickTargetY = y;
-        pickTargetButton = button;
-        pickTicks = StartCountdownSeconds * 1000 / (int)pickTimer.Interval.TotalMilliseconds;
-        pickTimer.Start();
-        PickTick();
+        ScreenPicker.Seconds = (int)Math.Clamp(Dec(PickSecondsBox), ScreenPicker.MinSeconds, ScreenPicker.MaxSeconds);
+        ScreenPicker.PickOnClick = PickOnClickBox.IsChecked == true;
     }
 
-    void PickTick()
+    /// <summary>
+    /// Fills an X/Y pair with a spot picked on screen. All picking goes through
+    /// <see cref="ScreenPicker"/>, so every Pick hides the windows and shows its countdown alike.
+    /// </summary>
+    async void StartPick(NumericUpDown x, NumericUpDown y, Button button)
     {
-        if (pickTargetX == null || pickTargetY == null || pickTargetButton == null)
+        if (picking) return;
+        picking = true;
+        try
         {
-            pickTimer.Stop();
-            return;
+            void Show(PixelPoint at)
+            {
+                x.Value = Math.Clamp(at.X, (int)x.Minimum, (int)x.Maximum);
+                y.Value = Math.Clamp(at.Y, (int)y.Minimum, (int)y.Maximum);
+            }
+            Show(await ScreenPicker.PickAsync(backend, Show));
         }
-
-        var position = backend.GetCursorPosition();
-        pickTargetX.Value = Math.Clamp(position.X, (int)pickTargetX.Minimum, (int)pickTargetX.Maximum);
-        pickTargetY.Value = Math.Clamp(position.Y, (int)pickTargetY.Minimum, (int)pickTargetY.Maximum);
-
-        pickTicks--;
-        if (pickTicks <= 0)
+        finally
         {
-            pickTimer.Stop();
-            pickTargetButton.Content = "Pick";
-            pickTargetX = pickTargetY = null;
-            pickTargetButton = null;
-            return;
+            picking = false;
         }
-        int secondsLeft = (int)Math.Ceiling(pickTicks * pickTimer.Interval.TotalMilliseconds / 1000);
-        pickTargetButton.Content = secondsLeft + "…";
     }
 
     // ---------------------------------------------------------------- key capture
@@ -1433,6 +1426,9 @@ public partial class MainWindow : Window
         TopMostBox.IsChecked = settings.GetBool("TopMost", false);
         LagCheckBox.IsChecked = settings.GetBool("LagCheck", true);
         LagNotifyBox.IsChecked = settings.GetBool("LagNotify", true);
+        SetValue(PickSecondsBox, Math.Clamp(settings.GetInt("PickSeconds", ScreenPicker.DefaultSeconds), ScreenPicker.MinSeconds, ScreenPicker.MaxSeconds));
+        PickOnClickBox.IsChecked = settings.GetBool("PickOnClick", false);
+        ApplyPickSettings();
         Topmost = TopMostBox.IsChecked == true;
     }
 
@@ -1470,6 +1466,8 @@ public partial class MainWindow : Window
         settings.Set("TopMost", TopMostBox.IsChecked == true);
         settings.Set("LagCheck", LagCheckBox.IsChecked == true);
         settings.Set("LagNotify", LagNotifyBox.IsChecked == true);
+        settings.Set("PickSeconds", ScreenPicker.Seconds);
+        settings.Set("PickOnClick", ScreenPicker.PickOnClick);
         settings.Save();
     }
 
@@ -1477,7 +1475,6 @@ public partial class MainWindow : Window
     {
         countdownTimer.Stop();
         recordCountdownTimer.Stop();
-        pickTimer.Stop();
         trayHideTimer.Stop();
         uiTimer.Stop();
         foreach (var slot in bindings) { slot.Session.Stop(); slot.Hotkey.Dispose(); }

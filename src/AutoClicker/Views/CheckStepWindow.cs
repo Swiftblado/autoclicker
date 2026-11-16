@@ -22,7 +22,7 @@ namespace AutoClicker.Views;
 /// </summary>
 sealed class CheckStepWindow : Window
 {
-    const int PickSeconds = 3;
+
 
     readonly Window owner;
     readonly IInputBackend backend;
@@ -91,14 +91,8 @@ sealed class CheckStepWindow : Window
     readonly TextBlock testResult = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 380 };
     readonly TextBlock problem = new() { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, IsVisible = false };
 
-    readonly DispatcherTimer pickTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
-    int pickTicks;
-    Button? pickButton;
-    string pickButtonText = "";
-    Action<PixelPoint, string?>? pickLive, pickDone;
+    bool picking;
     bool updatingColor;
-    /// <summary>True while the windows are parked off screen for a capture.</summary>
-    bool movedAway;
 
     /// <summary>
     /// Opens the editor on <paramref name="existing"/> (or a fresh check) and returns the step set
@@ -153,7 +147,7 @@ sealed class CheckStepWindow : Window
             new Button { Content = colorSwatch, Padding = new Thickness(4), Flyout = new Flyout { Content = colorView }, [ToolTip.TipProperty] = "Choose on a color wheel" },
             hexBox,
             colorDropper,
-            Hint("Dropper: hover over the color; it's taken after " + PickSeconds + " s.")
+            Hint("Dropper: hover over the color; it's taken when the countdown by the mouse ends.")
         ]);
 
         colorsPanel.Children.AddRange([
@@ -240,7 +234,7 @@ sealed class CheckStepWindow : Window
     /// <summary>Keeps the whole window, buttons included, inside the screen's working area.</summary>
     void FitOnScreen()
     {
-        if (movedAway) return;
+        if (WindowHider.IsHiding) return;
         var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
         if (screen == null) return;
         var area = screen.WorkingArea;
@@ -310,7 +304,7 @@ sealed class CheckStepWindow : Window
             hexBox.Text = ColorMatch.Format(e.NewColor.R, e.NewColor.G, e.NewColor.B);
             updatingColor = false;
         };
-        colorDropper.Click += (_, _) => StartPick(colorDropper,
+        colorDropper.Click += (_, _) => StartPick(
             live: (_, hex) => { if (hex != null) hexBox.Text = hex; },
             done: (at, hex) =>
             {
@@ -319,11 +313,11 @@ sealed class CheckStepWindow : Window
                 SetValue(atY, at.Y);
             });
 
-        atPick.Click += (_, _) => StartPick(atPick,
+        atPick.Click += (_, _) => StartPick(
             live: (at, _) => { SetValue(atX, at.X); SetValue(atY, at.Y); },
             done: (at, _) => { SetValue(atX, at.X); SetValue(atY, at.Y); });
 
-        pointPick.Click += (_, _) => StartPick(pointPick,
+        pointPick.Click += (_, _) => StartPick(
             live: (at, hex) => ShowPoint(at, hex),
             done: (at, hex) =>
             {
@@ -354,13 +348,6 @@ sealed class CheckStepWindow : Window
         imageCapture.Click += async (_, _) => await CaptureImageAsync();
         imageLoad.Click += async (_, _) => await LoadImageAsync();
         testButton.Click += async (_, _) => await TestAsync();
-
-        pickTimer.Tick += (_, _) => PickTick();
-        Closed += (_, _) =>
-        {
-            pickTimer.Stop();
-            if (movedAway) owner.Position = ownerPosition;
-        };
     }
 
     void ShowPoint(PixelPoint at, string? hex)
@@ -513,41 +500,24 @@ sealed class CheckStepWindow : Window
     // ---------------------------------------------------------------- dropper and picks
 
     /// <summary>
-    /// Follows the mouse for a few seconds, like the main window's Pick, then takes the point and
-    /// the color under it. <paramref name="live"/> runs as it goes, <paramref name="done"/> at the end.
+    /// Picks a spot with the shared <see cref="ScreenPicker"/> (windows hidden, countdown by the
+    /// mouse) and the color under it. <paramref name="live"/> runs as it goes, <paramref name="done"/> at the end.
     /// </summary>
-    void StartPick(Button button, Action<PixelPoint, string?> live, Action<PixelPoint, string?> done)
+    async void StartPick(Action<PixelPoint, string?> live, Action<PixelPoint, string?> done)
     {
-        if (pickButton != null) pickButton.Content = pickButtonText;   // one pick at a time
-        pickButton = button;
-        pickButtonText = button.Content as string ?? "";
-        pickLive = live;
-        pickDone = done;
-        pickTicks = PickSeconds * 1000 / (int)pickTimer.Interval.TotalMilliseconds;
-        // Out of the way, so the point under the cursor is whatever's behind the windows.
-        MoveAway();
-        pickTimer.Start();
-        PickTick();
-    }
-
-    void PickTick()
-    {
-        if (pickButton == null) { pickTimer.Stop(); return; }
-        var at = backend.GetCursorPosition();
-        string? hex = ScreenCapture.ColorAt(at);
-        pickTicks--;
-        if (pickTicks <= 0)
+        if (picking) return;
+        picking = true;
+        try
         {
-            pickTimer.Stop();
-            pickButton.Content = pickButtonText;
-            pickButton = null;
-            MoveBack();
-            pickDone?.Invoke(at, hex);
-            if (hex == null) ShowProblem(ScreenCaptureMissing);
-            return;
+            var at = await ScreenPicker.PickAsync(backend, p => live(p, ScreenCapture.ColorAt(p)));
+            string? hex = ScreenCapture.ColorAt(at);
+            done(at, hex);
+            ShowProblem(hex == null ? ScreenCaptureMissing : null);
         }
-        pickLive?.Invoke(at, hex);
-        pickButton.Content = (int)Math.Ceiling(pickTicks * pickTimer.Interval.TotalMilliseconds / 1000) + "…";
+        finally
+        {
+            picking = false;
+        }
     }
 
     static string ScreenCaptureMissing => OperatingSystem.IsMacOS()
@@ -635,43 +605,13 @@ sealed class CheckStepWindow : Window
     }
 
     /// <summary>
-    /// Moves this window and the main one off the screen while <paramref name="work"/> runs, so
-    /// they're neither in the way nor in the picture. (Opacity alone leaves the title bars showing.)
+    /// Moves the app's windows off the screen while <paramref name="work"/> runs, so they're
+    /// neither in the way nor in the picture. (Opacity alone leaves the title bars showing.)
     /// </summary>
-    async Task<T> WithWindowsHidden<T>(Func<Task<T>> work)
+    static async Task<T> WithWindowsHidden<T>(Func<Task<T>> work)
     {
-        MoveAway();
+        using var hidden = WindowHider.Hide();
         await Task.Delay(150);   // let the move reach the screen
-        try
-        {
-            return await work();
-        }
-        finally
-        {
-            MoveBack();
-        }
-    }
-
-    PixelPoint ownPosition, ownerPosition;
-
-    /// <summary>Parks this window and the main one off screen. <see cref="MoveBack"/> undoes it.</summary>
-    void MoveAway()
-    {
-        if (movedAway) return;
-        ownPosition = Position;
-        ownerPosition = owner.Position;
-        movedAway = true;
-        var away = new PixelPoint(-30000, -30000);
-        owner.Position = away;
-        Position = away;
-    }
-
-    void MoveBack()
-    {
-        if (!movedAway) return;
-        owner.Position = ownerPosition;
-        Position = ownPosition;
-        movedAway = false;
-        Activate();
+        return await work();
     }
 }

@@ -28,11 +28,18 @@ static class AreaSelector
         var done = new TaskCompletionSource<PixelRect?>();
         var overlays = new List<Window>();
         bool finished = false;
+        bool dragging = false;
+        var timers = new List<(Window Window, Border Bubble, TextBlock Text)>();
+        var countdown = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        double total = ScreenPicker.Seconds * 1000.0;
+        using var hidden = WindowHider.Hide();
 
         void Finish(PixelRect? result)
         {
             if (finished) return;
             finished = true;
+            countdown.Stop();
             foreach (var overlay in overlays) overlay.Close();
             done.TrySetResult(result);
         }
@@ -46,6 +53,16 @@ static class AreaSelector
                 Fill = new SolidColorBrush(Color.FromArgb(40, 59, 130, 246)),
                 IsVisible = false
             };
+            var bubbleText = new TextBlock { Foreground = Brushes.White, FontSize = 13, FontWeight = FontWeight.SemiBold };
+            var bubble = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(225, 30, 30, 30)),
+                CornerRadius = new CornerRadius(5),
+                Padding = new Thickness(8, 4),
+                IsHitTestVisible = false,
+                IsVisible = false,
+                Child = bubbleText
+            };
             var canvas = new Canvas
             {
                 Background = new SolidColorBrush(Color.FromArgb(70, 0, 0, 0)),
@@ -53,6 +70,7 @@ static class AreaSelector
                 Children =
                 {
                     box,
+                    bubble,
                     new Border
                     {
                         [Canvas.LeftProperty] = 24.0,
@@ -70,7 +88,7 @@ static class AreaSelector
                 SystemDecorations = SystemDecorations.None,
                 Topmost = true,
                 ShowInTaskbar = false,
-            CanMinimize = false,
+                CanMinimize = false,
                 CanResize = false,
                 Background = Brushes.Transparent,
                 TransparencyLevelHint = [WindowTransparencyLevel.Transparent],
@@ -91,6 +109,7 @@ static class AreaSelector
                 if (!point.Properties.IsLeftButtonPressed) return;
                 startLocal = point.Position;
                 startScreen = backend.GetCursorPosition();
+                dragging = true;
                 e.Pointer.Capture(canvas);
             };
             canvas.PointerMoved += (_, e) =>
@@ -107,6 +126,7 @@ static class AreaSelector
             {
                 if (startLocal == null) return;
                 startLocal = null;
+                dragging = false;
                 var end = backend.GetCursorPosition();
                 int left = Math.Min(startScreen.X, end.X), top = Math.Min(startScreen.Y, end.Y);
                 int width = Math.Abs(end.X - startScreen.X) + 1, height = Math.Abs(end.Y - startScreen.Y) + 1;
@@ -116,10 +136,33 @@ static class AreaSelector
             };
             window.KeyDown += (_, e) => { if (e.Key == Key.Escape) Finish(null); };
             window.Closed += (_, _) => Finish(null);
+            timers.Add((window, bubble, bubbleText));
             overlays.Add(window);
         }
 
         if (overlays.Count == 0) return null;
+
+        // The countdown follows the mouse on whichever screen it's on. Time running out cancels,
+        // but never cuts off a box that's being dragged.
+        countdown.Tick += (_, _) =>
+        {
+            double left = (total - clock.ElapsedMilliseconds) / 1000;
+            if (left <= 0 && !dragging) { Finish(null); return; }
+            var cursor = backend.GetCursorPosition();
+            foreach (var (window, bubble, text) in timers)
+            {
+                var local = window.PointToClient(cursor);
+                bool here = local.X >= 0 && local.Y >= 0 && local.X < window.Bounds.Width && local.Y < window.Bounds.Height;
+                bubble.IsVisible = here;
+                if (!here) continue;
+                text.Text = dragging ? "Let go to finish" : Math.Max(0, left).ToString("0.0", System.Globalization.CultureInfo.CurrentCulture) + " s";
+                // Flip to the other side of the mouse near the right or bottom edge.
+                var size = bubble.Bounds.Size;
+                Canvas.SetLeft(bubble, local.X + 20 + size.Width > window.Bounds.Width ? local.X - 20 - size.Width : local.X + 20);
+                Canvas.SetTop(bubble, local.Y + 20 + size.Height > window.Bounds.Height ? local.Y - 20 - size.Height : local.Y + 20);
+            }
+        };
+        countdown.Start();
         foreach (var overlay in overlays) overlay.Show();
         // Give the screen under the mouse the keyboard, so Esc works straight away.
         Dispatcher.UIThread.Post(() => (overlays.FirstOrDefault(o => o.IsPointerOver) ?? overlays[0]).Activate());

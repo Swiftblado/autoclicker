@@ -341,6 +341,14 @@
                 <CheckBox x:Name="LagNotifyBox" Content="Notify me when it slows down" IsChecked="True" Margin="16,0,0,0"
                           ToolTip.Tip="Sends a system notification when it slows down for lag and when it's back to full speed." />
               </StackPanel>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Time to pick a spot:" Classes="label" />
+                <NumericUpDown x:Name="PickSecondsBox" Width="56" Minimum="1" Maximum="60" Value="3" FormatString="0"
+                               ToolTip.Tip="How long every Pick, Dropper and drag-a-box gives you to choose a spot on the screen. A countdown next to the mouse shows the time left." />
+                <TextBlock Text="s" Classes="unit" />
+                <CheckBox x:Name="PickOnClickBox" Content="A click picks right away" Margin="8,0,0,0"
+                          ToolTip.Tip="While picking a spot, a left click takes it at once instead of waiting for the countdown. That click doesn't reach whatever is under the mouse." />
+              </StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <Button x:Name="UpdateButton" Content="Check for updates" MinWidth="150" />
                 <Button x:Name="WhatsNewButton" Content="What's new" />

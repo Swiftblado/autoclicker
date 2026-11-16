@@ -45,6 +45,8 @@ Pick **Macro** from the dropdown, then either:
 - **Record**: press **Record**, wait for the 2-second countdown, do the thing, then press **F6** to finish. What you did is added to the list as steps. The key you use to stop isn't recorded.
 - **Build by hand**: choose a step type under **Add step**, fill in the details (**Pick** grabs a screen position after a countdown) and press **Add**. Select a step to move, delete or **Replace** it.
 
+**Picking a spot on the screen** works the same everywhere (**Pick**, **Dropper**, **Pick & add**, **Drag area…**, **Capture from screen…**). The app's windows get out of the way, and a countdown next to the mouse shows the time left. When it runs out, the spot under the mouse is taken (a drag-a-box that hasn't been started is cancelled). **Time to pick a spot** under **Options** sets the time, from 1 to 60 seconds (3 by default). Turn on **A click picks right away** to pick with a left click instead of waiting. That click is held back from whatever is under the mouse.
+
 Recording keeps the shape of what you did rather than a literal trace: a press and release in one spot becomes a click, a press and release apart becomes a drag in a straight line between them, a key with modifiers held becomes one step, and the pauses in between become waits. Cursor movements on their own aren't recorded, since every click and drag carries its own coordinates.
 
 **Save...** and **Open...** keep macros as `.json` files (in `Macros` next to the settings file by default). Whatever is in the list is remembered between runs, and the **Repeat the macro** section controls how often the whole sequence replays.
