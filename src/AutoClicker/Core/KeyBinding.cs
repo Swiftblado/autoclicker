@@ -59,6 +59,8 @@ public static class KeyBindingStore
             var file = JsonSerializer.Deserialize<FileShape>(File.ReadAllText(FilePath), JsonOptions);
             if (file == null || file.Version > CurrentVersion) return new();
             file.Bindings.RemoveAll(b => !KeyMap.IsSupported(b.Key));
+            // Bindings saved before 3.0 may hold old check steps.
+            foreach (var binding in file.Bindings) MacroUpgrade.Upgrade(binding.Setup.Steps);
             return file.Bindings;
         }
         catch (Exception)

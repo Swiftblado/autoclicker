@@ -10,7 +10,7 @@ namespace AutoClicker.Core;
 public sealed class Macro
 {
     /// <summary>Bumped when the on-disk shape changes; <see cref="Load"/> rejects a file newer than this.</summary>
-    const int CurrentVersion = 1;
+    const int CurrentVersion = 2;
 
     static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -35,6 +35,7 @@ public sealed class Macro
             var json = File.ReadAllText(path);
             var macro = JsonSerializer.Deserialize<Macro>(json, JsonOptions);
             if (macro is null || macro.Version > CurrentVersion) return null;
+            macro.Upgrade();
             return macro;
         }
         catch (Exception)
@@ -52,6 +53,29 @@ public sealed class Macro
         File.WriteAllText(path, JsonSerializer.Serialize(this, JsonOptions));
     }
 
+    /// <summary>
+    /// Set when loading turned old (pre-3.0) check steps into If/While blocks: what the user should
+    /// know about it. Not saved.
+    /// </summary>
+    [JsonIgnore] public string? UpgradeNote { get; private set; }
+
+    /// <summary>Brings steps from an older version up to date; see <see cref="MacroUpgrade"/>.</summary>
+    public void Upgrade()
+    {
+        int dropped = MacroUpgrade.Upgrade(Steps);
+        if (dropped < 0) return;
+        UpgradeNote = "Its screen checks were turned into If and While blocks." + (dropped > 0
+            ? " " + dropped + (dropped == 1 ? " check" : " checks") + " searching an area clicked where they found something; checks can't do that anymore, so " + (dropped == 1 ? "that click was" : "those clicks were") + " left out."
+            : "");
+    }
+
+    /// <summary>The macro as it would be written to a file.</summary>
+    public string ToJson()
+    {
+        Version = CurrentVersion;
+        return JsonSerializer.Serialize(this, JsonOptions);
+    }
+
     public Macro Clone()
     {
         var clone = new Macro { Version = Version, Name = Name };
@@ -60,39 +84,36 @@ public sealed class Macro
     }
 
     /// <summary>
-    /// After steps move or go, keeps every check's "go to step" pointing at the same step.
-    /// <paramref name="map"/> takes an old step number (from 1) to its new one.
+    /// After lines move, appear or go, keeps every "Go to line" pointing at the same line.
+    /// <paramref name="map"/> takes an old line number (from 1) to its new one.
     /// </summary>
     public static void Renumber(List<MacroStep> steps, Func<int, int> map)
     {
         foreach (var step in steps)
-        {
-            if (step.Kind != StepKind.Check) continue;
-            step.FoundStep = Math.Clamp(map(step.FoundStep), 1, Math.Max(1, steps.Count));
-            step.MissingStep = Math.Clamp(map(step.MissingStep), 1, Math.Max(1, steps.Count));
-        }
+            if (step.Kind == StepKind.GoTo)
+                step.Line = Math.Clamp(map(step.Line), 1, Math.Max(1, steps.Count));
     }
 
-    /// <summary>What's wrong with a check step, in words for the user; null when it can run.</summary>
-    public static string? CheckProblem(List<MacroStep> steps)
+    /// <summary>What stops the macro from running, in words for the user; null when it can run.</summary>
+    public static string? Problem(List<MacroStep> steps)
     {
+        var blocks = MacroBlocks.Analyze(steps);
+        if (blocks.Problem != null) return blocks.Problem;
         for (int i = 0; i < steps.Count; i++)
         {
             var step = steps[i];
-            if (step.Kind != StepKind.Check) continue;
-            string which = "Step " + (i + 1) + " ";
-            switch (step.Target)
+            string which = "Line " + (i + 1) + " ";
+            switch (step.Kind)
             {
-                case CheckTarget.Color when ColorMatch.Normalize(step.Color) == null:
-                    return which + "has no valid color. Use a hex code like #FF8800.";
-                case CheckTarget.Colors when step.Points.Count == 0:
-                    return which + "has no colors to look for. Add at least one point.";
-                case CheckTarget.Image when string.IsNullOrEmpty(step.ImagePng):
-                    return which + "has no image. Capture one or load a PNG.";
+                case StepKind.If or StepKind.ElseIf or StepKind.While:
+                    if (step.Condition == null) return which + "has no condition. Double-click it to set one.";
+                    if (step.Condition.Problem() is { } trouble) return "Line " + (i + 1) + ": " + trouble;
+                    break;
+                case StepKind.GoTo when step.Line < 1 || step.Line > steps.Count:
+                    return which + "goes to a line that doesn't exist.";
+                case StepKind.Check:
+                    return which + "is a screen check on its own; checks belong in the condition of an If or While.";
             }
-            if (step.OnFound == CheckBranch.GoTo && (step.FoundStep < 1 || step.FoundStep > steps.Count) ||
-                step.OnMissing == CheckBranch.GoTo && (step.MissingStep < 1 || step.MissingStep > steps.Count))
-                return which + "goes to a step that doesn't exist.";
         }
         return null;
     }

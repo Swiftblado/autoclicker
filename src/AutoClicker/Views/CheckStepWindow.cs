@@ -17,8 +17,9 @@ using Avalonia.Threading;
 namespace AutoClicker.Views;
 
 /// <summary>
-/// Sets up a check step: what to look for (a color, several colors, or an image), where, and what
-/// the macro does when it's there and when it isn't.
+/// Sets up one screen check of a condition: what to look for (a color, several colors, or an
+/// image) and where. A check only answers found or not found; the If or While around it decides
+/// what happens.
 /// </summary>
 sealed class CheckStepWindow : Window
 {
@@ -26,7 +27,6 @@ sealed class CheckStepWindow : Window
 
     readonly Window owner;
     readonly IInputBackend backend;
-    readonly int stepCount;
 
     // What to look for
     readonly ComboBox targetBox = Combo(140, "A color", "Several colors", "An image");
@@ -73,20 +73,6 @@ sealed class CheckStepWindow : Window
     readonly StackPanel areaRow = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
     readonly NumericUpDown tolerance = Number(0, 255, ColorMatch.DefaultTolerance, 60);
 
-    // When
-    readonly ComboBox modeBox = Combo(200, "Check once", "Wait until it appears");
-    readonly NumericUpDown timeout = Number(0, 3_600_000, 10000, 90);
-    readonly StackPanel timeoutRow = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
-
-    // Then
-    readonly CheckBox clickFound = new() { Content = "Click on it with" };
-    readonly ComboBox clickButton = Combo(88, "Left", "Right", "Middle");
-    readonly ComboBox foundBranch = Combo(150, "Continue", "Go to step", "Stop the macro");
-    readonly NumericUpDown foundStep = Number(1, 9999, 1, 60);
-    readonly TextBlock missingLabel = new() { VerticalAlignment = VerticalAlignment.Center, Width = 200 };
-    readonly ComboBox missingBranch = Combo(150, "Continue", "Go to step", "Stop the macro");
-    readonly NumericUpDown missingStep = Number(1, 9999, 1, 60);
-
     readonly Button testButton = new() { Content = "Test now", Width = 90 };
     readonly TextBlock testResult = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 380 };
     readonly TextBlock problem = new() { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, IsVisible = false };
@@ -95,21 +81,18 @@ sealed class CheckStepWindow : Window
     bool updatingColor;
 
     /// <summary>
-    /// Opens the editor on <paramref name="existing"/> (or a fresh check) and returns the step set
-    /// up, or null if cancelled. <paramref name="stepCount"/> is how many steps the macro will have.
+    /// Opens the editor on <paramref name="existing"/> (or a fresh check) and returns the check set
+    /// up, or null if cancelled.
     /// </summary>
-    public static Task<MacroStep?> EditAsync(Window owner, IInputBackend backend, MacroStep? existing, int stepCount) =>
-        new CheckStepWindow(owner, backend, existing ?? NewCheck(), stepCount).ShowDialog<MacroStep?>(owner);
+    public static Task<MacroStep?> EditAsync(Window owner, IInputBackend backend, MacroStep? existing) =>
+        new CheckStepWindow(owner, backend, existing ?? MacroStep.NewCheck()).ShowDialog<MacroStep?>(owner);
 
-    static MacroStep NewCheck() => new() { Kind = StepKind.Check, Where = CheckArea.Point };
-
-    CheckStepWindow(Window owner, IInputBackend backend, MacroStep step, int stepCount)
+    CheckStepWindow(Window owner, IInputBackend backend, MacroStep step)
     {
         this.owner = owner;
         this.backend = backend;
-        this.stepCount = Math.Max(1, stepCount);
 
-        Title = "Check the screen";
+        Title = "Screen check";
         Icon = owner.Icon;
         ShowInTaskbar = false;
         CanMinimize = false;
@@ -118,7 +101,6 @@ sealed class CheckStepWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Topmost = owner.Topmost;
 
-        foundStep.Maximum = missingStep.Maximum = this.stepCount;
         pointList.ItemsSource = points;
         pointList.ItemTemplate = new FuncDataTemplate<ColorPoint>((point, _) => point == null ? new TextBlock() : new StackPanel
         {
@@ -164,9 +146,8 @@ sealed class CheckStepWindow : Window
 
         atRow.Children.AddRange([Label("X"), atX, Label("Y"), atY, atPick]);
         areaRow.Children.AddRange([Label("X"), areaX, Label("Y"), areaY, Label("W"), areaW, Label("H"), areaH, areaDrag]);
-        timeoutRow.Children.AddRange([Label("Give up after"), timeout, Label("ms (0 = never)")]);
 
-        var ok = new Button { Content = "OK", MinWidth = 90, IsDefault = true, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var ok = new Button { Content = "OK", MinWidth = 90, IsDefault = true, HorizontalContentAlignment = HorizontalAlignment.Center, Classes = { "accent" } };
         var cancel = new Button { Content = "Cancel", MinWidth = 90, IsCancel = true, HorizontalContentAlignment = HorizontalAlignment.Center };
         ok.Click += (_, _) => Accept();
         cancel.Click += (_, _) => Close(null);
@@ -209,15 +190,7 @@ sealed class CheckStepWindow : Window
                 areaRow,
                 Row(Label("Tolerance"), tolerance, Hint("0 = exact color; each of red, green, blue may be off by this much.")),
 
-                Section("When"),
-                Row(modeBox, timeoutRow),
-
-                Section("Then"),
-                Row(new TextBlock { Text = "If found:", Width = 200, VerticalAlignment = VerticalAlignment.Center },
-                    clickFound, clickButton),
-                Row(new TextBlock { Text = "and then", Width = 200, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8 },
-                    foundBranch, foundStep),
-                Row(missingLabel, missingBranch, missingStep)
+                Hint("A check only says found or not found. Put it in the condition of an If or While to decide what happens.")
             }
         };
 
@@ -249,7 +222,7 @@ sealed class CheckStepWindow : Window
 
     static TextBlock Section(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 4, 0, -4) };
     static TextBlock Label(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8 };
-    static TextBlock Hint(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, MaxWidth = 520 };
+    static TextBlock Hint(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, MaxWidth = 520 };
 
     static StackPanel Row(params Control[] children)
     {
@@ -284,10 +257,6 @@ sealed class CheckStepWindow : Window
     {
         targetBox.SelectionChanged += (_, _) => { FillWhereChoices(CheckAreaChosen()); UpdateVisibility(); };
         whereBox.SelectionChanged += (_, _) => UpdateVisibility();
-        modeBox.SelectionChanged += (_, _) => UpdateVisibility();
-        foundBranch.SelectionChanged += (_, _) => UpdateVisibility();
-        missingBranch.SelectionChanged += (_, _) => UpdateVisibility();
-        clickFound.IsCheckedChanged += (_, _) => UpdateVisibility();
 
         hexBox.TextChanged += (_, _) =>
         {
@@ -397,13 +366,6 @@ sealed class CheckStepWindow : Window
         imagePanel.IsVisible = target == CheckTarget.Image;
         atRow.IsVisible = target == CheckTarget.Color && where == CheckArea.Point;
         areaRow.IsVisible = where == CheckArea.Area;
-
-        bool waits = modeBox.SelectedIndex == 1;
-        timeoutRow.IsVisible = waits;
-        missingLabel.Text = waits ? "If it doesn't appear in time:" : "If not found:";
-        clickButton.IsEnabled = clickFound.IsChecked == true;
-        foundStep.IsVisible = foundBranch.SelectedIndex == (int)CheckBranch.GoTo;
-        missingStep.IsVisible = missingBranch.SelectedIndex == (int)CheckBranch.GoTo;
     }
 
     void Load(MacroStep step)
@@ -426,14 +388,6 @@ sealed class CheckStepWindow : Window
                 SetArea(new PixelRect(screen.X + screen.Width / 4, screen.Y + screen.Height / 4, screen.Width / 2, screen.Height / 2));
         }
         SetValue(tolerance, step.Tolerance);
-        modeBox.SelectedIndex = step.WaitUntilFound ? 1 : 0;
-        SetValue(timeout, step.TimeoutMs);
-        clickFound.IsChecked = step.ClickFound;
-        clickButton.SelectedIndex = (int)step.Button;
-        foundBranch.SelectedIndex = (int)step.OnFound;
-        SetValue(foundStep, step.FoundStep);
-        missingBranch.SelectedIndex = (int)step.OnMissing;
-        SetValue(missingStep, step.MissingStep);
     }
 
     /// <summary>The step as set up now, whether or not it's complete.</summary>
@@ -454,15 +408,7 @@ sealed class CheckStepWindow : Window
             AreaY = (int)(areaY.Value ?? 0),
             AreaWidth = (int)(areaW.Value ?? 1),
             AreaHeight = (int)(areaH.Value ?? 1),
-            Tolerance = (int)(tolerance.Value ?? ColorMatch.DefaultTolerance),
-            WaitUntilFound = modeBox.SelectedIndex == 1,
-            TimeoutMs = (int)(timeout.Value ?? 0),
-            ClickFound = clickFound.IsChecked == true,
-            Button = (ClickButton)Math.Clamp(clickButton.SelectedIndex, 0, 2),
-            OnFound = (CheckBranch)Math.Max(0, foundBranch.SelectedIndex),
-            FoundStep = (int)(foundStep.Value ?? 1),
-            OnMissing = (CheckBranch)Math.Max(0, missingBranch.SelectedIndex),
-            MissingStep = (int)(missingStep.Value ?? 1)
+            Tolerance = (int)(tolerance.Value ?? ColorMatch.DefaultTolerance)
         };
     }
 

@@ -57,7 +57,7 @@ public sealed class RunSetup
             return "Click the Key box and press the key you want repeated.";
         if (Mode == AutomationMode.Macro && Steps.Count == 0)
             return "The macro is empty. Record one, or add steps below.";
-        if (Mode == AutomationMode.Macro) return Macro.CheckProblem(Steps);
+        if (Mode == AutomationMode.Macro) return Macro.Problem(Steps);
         return null;
     }
 

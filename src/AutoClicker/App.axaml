@@ -1,24 +1,50 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="AutoClicker.App"
-             RequestedThemeVariant="Default">
+             RequestedThemeVariant="Dark">
 
+  <!-- A dark look with one blue accent. The palette feeds every Fluent control (buttons, boxes,
+       lists, check boxes), so code-built windows match without styling each one. -->
   <Application.Styles>
-    <FluentTheme />
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Dark"
+                               Accent="#FF3B82F6"
+                               AltHigh="#FF0E1117" AltLow="#FF10131A" AltMedium="#FF10131A" AltMediumHigh="#FF0E1117" AltMediumLow="#FF12161E"
+                               BaseHigh="#FFF1F4F9" BaseLow="#FF2A303C" BaseMedium="#FF9AA3B2"
+                               BaseMediumHigh="#FFC3CAD5" BaseMediumLow="#FF5E6676"
+                               ChromeAltLow="#FFC3CAD5" ChromeBlackHigh="Black" ChromeBlackLow="#FFC3CAD5"
+                               ChromeBlackMedium="Black" ChromeBlackMediumLow="Black"
+                               ChromeDisabledHigh="#FF2A303C" ChromeDisabledLow="#FF6B7384"
+                               ChromeGray="#FF7A8394" ChromeHigh="#FF7A8394"
+                               ChromeLow="#FF141821" ChromeMedium="#FF1A1F29" ChromeMediumLow="#FF222834"
+                               ChromeWhite="White"
+                               ListLow="#FF1C2230" ListMedium="#FF263043"
+                               RegionColor="#FF0E1117" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
     <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
 
-    <!-- Section card: a titled box grouping related settings. -->
-    <!-- Neutral translucent colours so the cards read correctly in both light and dark themes. -->
+    <Style Selector="Window">
+      <Setter Property="Background" Value="#0E1117" />
+    </Style>
+
+    <!-- Section card: a titled panel grouping related settings. -->
     <Style Selector="Border.card">
-      <Setter Property="BorderBrush" Value="#40808080" />
+      <Setter Property="Background" Value="#161A22" />
+      <Setter Property="BorderBrush" Value="#232936" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="Padding" Value="12" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="14" />
+      <Setter Property="BoxShadow" Value="0 2 10 0 #40000000" />
     </Style>
 
     <Style Selector="TextBlock.sectionTitle">
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Margin" Value="2,0,0,4" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="LetterSpacing" Value="0.6" />
+      <Setter Property="Foreground" Value="#8B95A7" />
+      <Setter Property="Margin" Value="4,0,0,6" />
     </Style>
 
     <Style Selector="TextBlock.label">
@@ -29,7 +55,43 @@
     <Style Selector="TextBlock.unit">
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="Margin" Value="4,0,10,0" />
-      <Setter Property="Opacity" Value="0.8" />
+      <Setter Property="Foreground" Value="#9AA3B2" />
+    </Style>
+
+    <Style Selector="TextBlock.hint">
+      <Setter Property="Foreground" Value="#8B95A7" />
+    </Style>
+
+    <!-- Softer, rounder controls. -->
+    <Style Selector="Button">
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="10,5" />
+    </Style>
+    <Style Selector="Button.accent">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="CornerRadius" Value="7" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="CornerRadius" Value="7" />
+    </Style>
+
+    <Style Selector="ListBox">
+      <Setter Property="Background" Value="#10131A" />
+      <Setter Property="BorderBrush" Value="#232936" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="4" />
+    </Style>
+    <Style Selector="ListBoxItem">
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="8,6" />
+    </Style>
+    <!-- The macro's lines sit closer together, so more of a long macro fits. -->
+    <Style Selector="ListBox.steps ListBoxItem">
+      <Setter Property="Padding" Value="4,4" />
+      <Setter Property="MinHeight" Value="28" />
     </Style>
 
     <!-- The spinner buttons eat most of a narrow box, so type the value instead.
@@ -38,6 +100,7 @@
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="ShowButtonSpinner" Value="False" />
       <Setter Property="HorizontalContentAlignment" Value="Right" />
+      <Setter Property="CornerRadius" Value="7" />
     </Style>
 
     <!-- Small round "?" button that opens an explanation. -->
@@ -54,9 +117,10 @@
 
     <!-- The box that records the key to press. -->
     <Style Selector="Border.keyCapture">
-      <Setter Property="BorderBrush" Value="#80808080" />
+      <Setter Property="Background" Value="#10131A" />
+      <Setter Property="BorderBrush" Value="#2A303C" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="CornerRadius" Value="7" />
       <Setter Property="Padding" Value="10,6" />
       <Setter Property="MinWidth" Value="170" />
       <Setter Property="Cursor" Value="Hand" />

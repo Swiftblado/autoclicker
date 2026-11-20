@@ -20,8 +20,9 @@ Nothing to install — each download is the whole app.
 - Mouse: left, right or middle button, single or double click, at the cursor or a fixed spot; full clicks (held 20–50 ms) or half clicks (an instant tap)
 - Drags: hold a button and glide between two points over a set time
 - Keyboard: any key, with Ctrl/Shift/Alt/Cmd, and a set hold time
-- Macros: record what you do and replay it, or build a sequence of clicks, drags, keys and waits by hand — saved and reopened as `.json` files
-- Screen checks in macros: look for a color (hex code, color wheel or dropper), a pattern of several colors, or an image, then click it, jump to another step or stop
+- Macros: record what you do and replay it, or build one by hand from clicks, drags, keys and waits, with If / Else if / Else, While and For blocks, Go to line and Stop
+- Conditions for If and While: screen checks for a color (hex code, color wheel or dropper), a pattern of several colors, or an image, combined with and, or and not in nested groups
+- Saved macros listed in the app, with rename, delete, download as `.json` and import
 - Interval from 1 ms to 24 hours, optional random variation, repeat forever or a set number of times
 - Lag protection: slows down automatically when your computer or the target app falls behind (including a game that stops redrawing), with an optional notification, and speeds back up once it clears
 - A global start/stop hotkey (F6 by default) that works from any window

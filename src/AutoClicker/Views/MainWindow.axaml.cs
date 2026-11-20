@@ -41,9 +41,10 @@ public partial class MainWindow : Window
     /// </summary>
     static readonly TimeSpan ModifierReleaseTime = TimeSpan.FromMilliseconds(300);
     const int RecordCountdownSeconds = 2;
-    /// <summary>Position of "Check screen" in the step type box.</summary>
-    const int CheckStepType = 4;
-    const string CurrentMacroFile = "current.json";
+    // Positions in the step type box.
+    const int TypeClick = 0, TypeDrag = 1, TypeKey = 2, TypeWait = 3, TypeIf = 4, TypeElseIf = 5, TypeElse = 6,
+        TypeWhile = 7, TypeFor = 8, TypeGoTo = 9, TypeStop = 10;
+    const string CurrentMacroFile = "current-macro.json";
 
     /// <summary>How long the Windows tray icon lingers after the "back to full speed" notification.</summary>
     static readonly TimeSpan TrayLingerTime = TimeSpan.FromSeconds(10);
@@ -70,7 +71,8 @@ public partial class MainWindow : Window
     readonly DispatcherTimer trayHideTimer = new() { Interval = TrayLingerTime };
 
     readonly Macro macro = new();
-    readonly ObservableCollection<string> stepRows = [];
+    readonly ObservableCollection<StepRow> stepRows = [];
+    readonly ObservableCollection<string> libraryRows = [];
     readonly List<RecordedEvent> recordedEvents = [];
     readonly object recordLock = new();
 
@@ -102,6 +104,7 @@ public partial class MainWindow : Window
         ModMeta.Content = StepModMeta.Content = KeyMap.MetaName;
         HotkeyBox.ItemsSource = HotkeyChoices.Select(KeyMap.Name).ToList();
         StepList.ItemsSource = stepRows;
+        StepList.ItemTemplate = StepRow.Template;
         var holdChoices = ClickHold.ChoicesMs.Select(ms => ms + " ms").Append("Custom…").ToList();
         HoldBox.ItemsSource = holdChoices;
         StepHoldBox.ItemsSource = holdChoices;
@@ -148,13 +151,21 @@ public partial class MainWindow : Window
         RecordButton.Click += (_, _) => ToggleRecording();
         StepAddButton.Click += async (_, _) => await AddStepAsync(replaceSelected: false);
         StepReplaceButton.Click += async (_, _) => await AddStepAsync(replaceSelected: true);
-        StepList.DoubleTapped += async (_, _) => await EditSelectedCheckAsync();
+        StepList.DoubleTapped += async (_, _) => await EditSelectedStepAsync();
         StepUpButton.Click += (_, _) => MoveStep(-1);
         StepDownButton.Click += (_, _) => MoveStep(1);
         StepDeleteButton.Click += (_, _) => DeleteStep();
         StepClearButton.Click += (_, _) => ClearSteps();
-        MacroOpenButton.Click += async (_, _) => await OpenMacroAsync();
         MacroSaveButton.Click += async (_, _) => await SaveMacroAsync();
+        LibraryList.ItemsSource = libraryRows;
+        LibraryList.SelectionChanged += (_, _) => UpdateControls();
+        LibraryList.DoubleTapped += async (_, _) => await LoadFromLibraryAsync();
+        LibraryLoadButton.Click += async (_, _) => await LoadFromLibraryAsync();
+        LibraryRenameButton.Click += async (_, _) => await RenameInLibraryAsync();
+        LibraryDeleteButton.Click += async (_, _) => await DeleteFromLibraryAsync();
+        LibraryDownloadButton.Click += async (_, _) => await DownloadFromLibraryAsync();
+        LibraryImportButton.Click += async (_, _) => await ImportToLibraryAsync();
+        StepForUnit.SelectionChanged += (_, _) => UpdateControls();
         UpdateButton.Click += async (_, _) => await OnUpdateClickedAsync();
         WhatsNewButton.Click += async (_, _) => await ChangelogWindow.ShowAsync(this);
         BindingList.ItemsSource = bindingRows;
@@ -182,6 +193,7 @@ public partial class MainWindow : Window
 
         LoadSettings();
         LoadCurrentMacro();
+        RefreshLibrary();
         LoadBindings();
         hotkeys.Pressed += () => Dispatcher.UIThread.Post(ToggleFromHotkey);
 
@@ -245,7 +257,7 @@ public partial class MainWindow : Window
         MouseSection.IsVisible = mode == AutomationMode.Clicks;
         DragSection.IsVisible = mode == AutomationMode.Drags;
         KeyboardSection.IsVisible = mode == AutomationMode.Keys;
-        MacroSection.IsVisible = mode == AutomationMode.Macro;
+        MacroSection.IsVisible = LibrarySection.IsVisible = mode == AutomationMode.Macro;
 
         ModeBox.IsEnabled = !busy;
         MouseSection.IsEnabled = DragSection.IsEnabled = KeyboardSection.IsEnabled = !busy;
@@ -268,17 +280,28 @@ public partial class MainWindow : Window
         StepDownButton.IsEnabled = canEditMacro && selected >= 0 && selected < macro.Steps.Count - 1;
         StepDeleteButton.IsEnabled = canEditMacro && selected >= 0;
         StepClearButton.IsEnabled = canEditMacro && macro.Steps.Count > 0;
-        MacroOpenButton.IsEnabled = MacroSaveButton.IsEnabled = canEditMacro;
+        MacroSaveButton.IsEnabled = canEditMacro && macro.Steps.Count > 0;
         StepClickPanel.IsEnabled = StepDragPanel.IsEnabled = StepKeyPanel.IsEnabled =
-            StepWaitPanel.IsEnabled = canEditMacro;
+            StepWaitPanel.IsEnabled = StepForPanel.IsEnabled = StepGoToPanel.IsEnabled = canEditMacro;
+        bool librarySelected = LibraryList.SelectedIndex >= 0 && LibraryList.SelectedIndex < libraryRows.Count;
+        LibraryCard.IsEnabled = canEditMacro;
+        LibraryEmpty.IsVisible = libraryRows.Count == 0;
+        LibraryList.IsVisible = libraryRows.Count > 0;
+        LibraryLoadButton.IsEnabled = LibraryRenameButton.IsEnabled = LibraryDeleteButton.IsEnabled =
+            LibraryDownloadButton.IsEnabled = librarySelected;
         RecordButton.IsEnabled = !IsBusy;
         RecordButton.Content = recorder.IsRecording || recordCountdownTimer.IsEnabled ? "Stop recording" : "Record";
 
-        StepClickPanel.IsVisible = StepTypeBox.SelectedIndex == 0;
-        StepDragPanel.IsVisible = StepTypeBox.SelectedIndex == 1;
-        StepKeyPanel.IsVisible = StepTypeBox.SelectedIndex == 2;
-        StepWaitPanel.IsVisible = StepTypeBox.SelectedIndex == 3;
-        StepCheckPanel.IsVisible = StepTypeBox.SelectedIndex == CheckStepType;
+        int type = StepTypeBox.SelectedIndex;
+        StepClickPanel.IsVisible = type == TypeClick;
+        StepDragPanel.IsVisible = type == TypeDrag;
+        StepKeyPanel.IsVisible = type == TypeKey;
+        StepWaitPanel.IsVisible = type == TypeWait;
+        StepForPanel.IsVisible = type == TypeFor;
+        StepGoToPanel.IsVisible = type == TypeGoTo;
+        StepGoToLine.Maximum = Math.Max(1, macro.Steps.Count + 1);
+        StepControlHint.Text = ControlHint(type);
+        StepControlHint.IsVisible = StepControlHint.Text != null;
 
         UpdateButton.IsEnabled = AppVersion.IsUpdatable && !checkingForUpdate && updateProgress == null;
         UpdateButton.Content = updateProgress is { } fraction ? "Updating… " + (int)(fraction * 100) + "%"
@@ -389,7 +412,7 @@ public partial class MainWindow : Window
         var running = mainRun.Macro;
         if (running == null) return "";
         int step = running.CurrentStepIndex;
-        return step >= 0 ? " Step " + (step + 1) + " of " + (mainRun.Setup?.Steps.Count ?? 0) + "." : "";
+        return step >= 0 ? " Line " + (step + 1) + " of " + (mainRun.Setup?.Steps.Count ?? 0) + "." : "";
     }
 
     // ---------------------------------------------------------------- start / stop
@@ -715,11 +738,26 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- macro editing
 
+    static string? ControlHint(int type) => type switch
+    {
+        TypeIf => "Add opens the condition: screen checks joined with and, or and not. The If comes with its End if; " +
+                  "the lines between them run only when the condition is true. Double-click an If to change its condition.",
+        TypeElseIf => "Goes inside an If, below its lines: tried when the If (and any Else if above) was false. Add opens its condition.",
+        TypeElse => "Goes inside an If, below its lines and any Else if: its lines run when nothing above was true.",
+        TypeWhile => "Add opens the condition, how often to check it, and how long it may loop. The lines up to End while " +
+                     "repeat for as long as the condition is true.",
+        TypeFor => null,
+        TypeGoTo => null,
+        TypeStop => "Ends the whole run, like pressing Stop.",
+        _ => null
+    };
+
     void RebuildStepRows(int selectIndex = -1)
     {
+        var blocks = MacroBlocks.Analyze(macro.Steps);
         stepRows.Clear();
         for (int i = 0; i < macro.Steps.Count; i++)
-            stepRows.Add((i + 1) + ".  " + macro.Steps[i].Describe());
+            stepRows.Add(new StepRow(i + 1, blocks.Depth[i], macro.Steps[i].Describe(), macro.Steps[i].IsControl));
 
         if (selectIndex >= 0 && selectIndex < stepRows.Count) StepList.SelectedIndex = selectIndex;
         UpdateMacroSummary();
@@ -733,32 +771,43 @@ public partial class MainWindow : Window
             MacroSummary.Text = "No steps yet — record one, or add steps below.";
             return;
         }
+        string lines = count + (count == 1 ? " line" : " lines");
+        if (Macro.Problem(macro.Steps) is { } problem)
+        {
+            MacroSummary.Text = lines + " · " + problem;
+            return;
+        }
+        if (macro.Steps.Exists(step => step.IsControl))
+        {
+            MacroSummary.Text = lines + (string.IsNullOrEmpty(macro.Name) ? "" : " · " + macro.Name);
+            return;
+        }
         int ms = macro.TotalDurationMs;
         string length = ms >= 1000
             ? (ms / 1000.0).ToString("0.#", CultureInfo.CurrentCulture) + " s"
             : ms + " ms";
-        MacroSummary.Text = count + (count == 1 ? " step" : " steps") + " · one pass takes about " + length;
+        MacroSummary.Text = lines + " · one pass takes about " + length;
     }
 
     MacroStep? BuildStepFromEditor()
     {
         switch (StepTypeBox.SelectedIndex)
         {
-            case 0:
+            case TypeClick:
                 return MacroStep.MakeClick(
                     (ClickButton)Math.Clamp(StepClickButtonBox.SelectedIndex, 0, 2),
                     StepClickTypeBox.SelectedIndex == 1 ? 2 : 1,
                     new PixelPoint((int)Dec(StepClickX), (int)Dec(StepClickY)),
                     holdMs: ReadHoldMs(StepPressBox, StepHoldBox, StepHoldCustom));
 
-            case 1:
+            case TypeDrag:
                 return MacroStep.MakeDrag(
                     (ClickButton)Math.Clamp(StepDragButtonBox.SelectedIndex, 0, 2),
                     new PixelPoint((int)Dec(StepDragFromX), (int)Dec(StepDragFromY)),
                     new PixelPoint((int)Dec(StepDragToX), (int)Dec(StepDragToY)),
                     (int)Dec(StepDragDuration));
 
-            case 2:
+            case TypeKey:
                 if (stepKey == Key.None)
                 {
                     validationMessage = "Click the key box in the editor and press a key first.";
@@ -767,6 +816,20 @@ public partial class MainWindow : Window
                 return MacroStep.MakeKey(stepKey,
                     ReadModifiers(StepModCtrl, StepModShift, StepModAlt, StepModMeta),
                     (int)Dec(StepKeyHold));
+
+            case TypeElse:
+                return MacroStep.Make(StepKind.Else);
+
+            case TypeFor:
+                return StepForUnit.SelectedIndex == 1
+                    ? MacroStep.MakeForSeconds((int)Math.Round(Dec(StepForAmount) * 1000))
+                    : MacroStep.MakeForTimes((int)Math.Round(Dec(StepForAmount)));
+
+            case TypeGoTo:
+                return MacroStep.MakeGoTo((int)Dec(StepGoToLine));
+
+            case TypeStop:
+                return MacroStep.Make(StepKind.Stop);
 
             default:
                 return MacroStep.MakeWait((int)Dec(StepWaitMs));
@@ -778,14 +841,15 @@ public partial class MainWindow : Window
         validationMessage = null;
         int selected = StepList.SelectedIndex;
         bool replacing = replaceSelected && selected >= 0 && selected < macro.Steps.Count;
+        int type = StepTypeBox.SelectedIndex;
 
         MacroStep? step;
-        if (StepTypeBox.SelectedIndex == CheckStepType)
+        if (type is TypeIf or TypeElseIf or TypeWhile)
         {
-            // Replacing a check edits it; replacing anything else starts a fresh check.
-            var existing = replacing && macro.Steps[selected].Kind == StepKind.Check ? macro.Steps[selected] : null;
-            step = await CheckStepWindow.EditAsync(this, backend, existing?.Clone(),
-                replacing ? macro.Steps.Count : macro.Steps.Count + 1);
+            // Replacing a line that has a condition starts from it; anything else starts fresh.
+            var existing = replacing ? macro.Steps[selected] : null;
+            step = await EditConditionAsync(type == TypeWhile ? StepKind.While : type == TypeIf ? StepKind.If : StepKind.ElseIf,
+                existing?.Condition != null ? existing : null);
             if (step == null) return;
         }
         else
@@ -793,35 +857,94 @@ public partial class MainWindow : Window
             step = BuildStepFromEditor();
             if (step == null) { UpdateControls(); return; }
         }
-        StoreStep(step, replacing ? selected : -1);
+
+        if (replacing) ReplaceStep(selected, step);
+        else InsertStep(step);
     }
 
-    /// <summary>Double-clicking a check step opens it for editing.</summary>
-    async System.Threading.Tasks.Task EditSelectedCheckAsync()
+    /// <summary>
+    /// Opens the condition editor for an If, Else if or While line, starting from
+    /// <paramref name="from"/>'s condition (and loop settings) when given. Null if cancelled.
+    /// </summary>
+    async System.Threading.Tasks.Task<MacroStep?> EditConditionAsync(StepKind kind, MacroStep? from)
+    {
+        bool isWhile = kind == StepKind.While;
+        var result = await ConditionWindow.EditAsync(this, backend, MacroBlocks.Name(kind), from?.Condition?.Clone(), isWhile,
+            from?.Kind == StepKind.While ? from.IntervalMs : MacroStep.DefaultIntervalMs,
+            from?.Kind == StepKind.While ? from.LimitMs : MacroStep.DefaultLimitMs);
+        if (result == null) return null;
+        return isWhile
+            ? MacroStep.MakeWhile(result.Condition, result.IntervalMs, result.LimitMs)
+            : MacroStep.MakeIf(result.Condition, elseIf: kind == StepKind.ElseIf);
+    }
+
+    /// <summary>
+    /// Double-clicking an If, Else if or While opens its condition. A For or Go to line is put in
+    /// the editor below, ready to change and Replace.
+    /// </summary>
+    async System.Threading.Tasks.Task EditSelectedStepAsync()
     {
         int selected = StepList.SelectedIndex;
         if (IsBusy || IsRecording || selected < 0 || selected >= macro.Steps.Count) return;
-        if (macro.Steps[selected].Kind != StepKind.Check) return;
-        StepTypeBox.SelectedIndex = CheckStepType;
-        var step = await CheckStepWindow.EditAsync(this, backend, macro.Steps[selected].Clone(), macro.Steps.Count);
-        if (step != null) StoreStep(step, selected);
+        var step = macro.Steps[selected];
+        switch (step.Kind)
+        {
+            case StepKind.If or StepKind.ElseIf or StepKind.While:
+                StepTypeBox.SelectedIndex = step.Kind switch { StepKind.If => TypeIf, StepKind.ElseIf => TypeElseIf, _ => TypeWhile };
+                var changed = await EditConditionAsync(step.Kind, step);
+                if (changed != null) ReplaceStep(selected, changed);
+                break;
+            case StepKind.For:
+                StepTypeBox.SelectedIndex = TypeFor;
+                StepForUnit.SelectedIndex = step.ForSeconds ? 1 : 0;
+                StepForAmount.Value = step.ForSeconds ? step.DurationMs / 1000m : step.Count;
+                break;
+            case StepKind.GoTo:
+                StepTypeBox.SelectedIndex = TypeGoTo;
+                StepGoToLine.Value = Math.Clamp(step.Line, 1, (int)StepGoToLine.Maximum);
+                break;
+        }
     }
 
-    /// <summary>Puts <paramref name="step"/> in place of step <paramref name="replace"/>, or at the end when -1.</summary>
-    void StoreStep(MacroStep step, int replace)
+    /// <summary>
+    /// Puts <paramref name="step"/> below the selected line, or at the end when nothing is selected.
+    /// An If, While or For brings its End line along, and stays selected so the next lines go inside it.
+    /// </summary>
+    void InsertStep(MacroStep step)
     {
-        int selected = replace;
-        bool replaceSelected = replace >= 0;
-        if (replaceSelected && selected >= 0 && selected < macro.Steps.Count)
+        int selected = StepList.SelectedIndex;
+        int at = selected >= 0 && selected < macro.Steps.Count ? selected + 1 : macro.Steps.Count;
+        var added = new List<MacroStep> { step };
+        if (step.Closer is { } closer) added.Add(MacroStep.Make(closer));
+
+        macro.Steps.InsertRange(at, added);
+        int shift = added.Count;
+        Macro.Renumber(macro.Steps, n => n > at ? n + shift : n);
+        RebuildStepRows(at);
+        SaveCurrentMacro();
+        UpdateControls();
+    }
+
+    /// <summary>
+    /// Puts <paramref name="step"/> in place of line <paramref name="index"/>. Turning one kind of
+    /// block into another (an If into a While, say) changes its End line to match; turning a plain
+    /// line into a block adds its End line right below.
+    /// </summary>
+    void ReplaceStep(int index, MacroStep step)
+    {
+        var old = macro.Steps[index];
+        int oldEnd = old.OpensBlock ? MacroBlocks.Analyze(macro.Steps).End[index] : -1;
+        macro.Steps[index] = step;
+        if (step.Closer is { } closer)
         {
-            macro.Steps[selected] = step;
-            RebuildStepRows(selected);
+            if (oldEnd >= 0) macro.Steps[oldEnd] = MacroStep.Make(closer);
+            else if (!old.OpensBlock)
+            {
+                macro.Steps.Insert(index + 1, MacroStep.Make(closer));
+                Macro.Renumber(macro.Steps, n => n > index + 1 ? n + 1 : n);
+            }
         }
-        else
-        {
-            macro.Steps.Add(step);
-            RebuildStepRows(macro.Steps.Count - 1);
-        }
+        RebuildStepRows(index);
         SaveCurrentMacro();
         UpdateControls();
     }
@@ -840,15 +963,42 @@ public partial class MainWindow : Window
         UpdateControls();
     }
 
+    /// <summary>
+    /// Deletes the selected line. For an If, While or For (or its End line), the block's frame goes
+    /// with it (Else if, Else and End lines too) and the lines inside move out a level.
+    /// </summary>
     void DeleteStep()
     {
         int index = StepList.SelectedIndex;
         if (index < 0 || index >= macro.Steps.Count) return;
-        macro.Steps.RemoveAt(index);
-        // Jumps to later steps follow them down; a jump to the deleted step lands on the one after it.
-        int removed = index + 1;
-        Macro.Renumber(macro.Steps, n => n > removed ? n - 1 : n);
-        RebuildStepRows(Math.Min(index, macro.Steps.Count - 1));
+
+        var remove = new SortedSet<int> { index };
+        var blocks = MacroBlocks.Analyze(macro.Steps);
+        var step = macro.Steps[index];
+        int opener = step.OpensBlock ? index
+            : step.Kind is StepKind.EndIf or StepKind.EndWhile or StepKind.EndFor ? blocks.Open[index]
+            : -1;
+        if (opener >= 0 && blocks.End[opener] >= 0)
+        {
+            remove.Add(opener);
+            for (int part = opener; part >= 0 && part != blocks.End[opener]; part = blocks.Next[part])
+                remove.Add(part);
+            remove.Add(blocks.End[opener]);
+        }
+
+        // Every old line's new number; a removed line's jumps land on the line that follows it.
+        var newLine = new int[macro.Steps.Count + 2];
+        int kept = 0;
+        for (int i = 0; i < macro.Steps.Count; i++)
+        {
+            if (!remove.Contains(i)) kept++;
+            newLine[i + 1] = remove.Contains(i) ? kept + 1 : kept;
+        }
+        newLine[macro.Steps.Count + 1] = kept + 1;
+
+        foreach (int i in remove.Reverse()) macro.Steps.RemoveAt(i);
+        Macro.Renumber(macro.Steps, n => n >= 1 && n < newLine.Length ? newLine[n] : n);
+        RebuildStepRows(Math.Min(remove.Min, macro.Steps.Count - 1));
         SaveCurrentMacro();
         UpdateControls();
     }
@@ -856,76 +1006,52 @@ public partial class MainWindow : Window
     void ClearSteps()
     {
         macro.Steps.Clear();
+        macro.Name = null;
         RebuildStepRows();
         SaveCurrentMacro();
         UpdateControls();
     }
 
-    // ---------------------------------------------------------------- macro files
+    // ---------------------------------------------------------------- saved macros
 
     static FilePickerFileType MacroFileType => new("Auto Clicker macro") { Patterns = ["*.json"] };
 
-    async System.Threading.Tasks.Task<IStorageFolder?> MacroFolderAsync()
+    string? SelectedLibraryName =>
+        LibraryList.SelectedIndex >= 0 && LibraryList.SelectedIndex < libraryRows.Count ? libraryRows[LibraryList.SelectedIndex] : null;
+
+    void RefreshLibrary(string? select = null)
     {
-        try
+        string? keep = select ?? SelectedLibraryName;
+        libraryRows.Clear();
+        foreach (var name in MacroLibrary.Names()) libraryRows.Add(name);
+        if (keep != null)
         {
-            Directory.CreateDirectory(Macro.DefaultFolder);
-            return await StorageProvider.TryGetFolderFromPathAsync(Macro.DefaultFolder);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    async System.Threading.Tasks.Task OpenMacroAsync()
-    {
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Open macro",
-            AllowMultiple = false,
-            FileTypeFilter = [MacroFileType],
-            SuggestedStartLocation = await MacroFolderAsync()
-        });
-
-        var file = files.Count > 0 ? files[0] : null;
-        if (file?.TryGetLocalPath() is not { } path) return;
-
-        var loaded = Macro.Load(path);
-        if (loaded == null)
-        {
-            transientMessage = "That file isn't a macro this version can read.";
-        }
-        else
-        {
-            macro.Steps.Clear();
-            macro.Steps.AddRange(loaded.Steps);
-            macro.Name = loaded.Name ?? Path.GetFileNameWithoutExtension(path);
-            transientMessage = "Opened " + Path.GetFileName(path) + ".";
-            RebuildStepRows();
-            SaveCurrentMacro();
+            int at = libraryRows.IndexOf(keep);
+            if (at >= 0) LibraryList.SelectedIndex = at;
         }
         UpdateControls();
     }
 
+    /// <summary>Save…: asks for a name and keeps the macro in Saved macros under it.</summary>
     async System.Threading.Tasks.Task SaveMacroAsync()
     {
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save macro",
-            SuggestedFileName = string.IsNullOrWhiteSpace(macro.Name) ? "macro.json" : macro.Name + ".json",
-            DefaultExtension = "json",
-            FileTypeChoices = [MacroFileType],
-            SuggestedStartLocation = await MacroFolderAsync()
-        });
+        var name = await PromptAsync("Save macro", "Save this macro as", macro.Name ?? SelectedLibraryName ?? "",
+            "Save", text => MacroLibrary.CleanName(text, out var problem) == null ? problem : null);
+        if (name == null) return;
+        name = MacroLibrary.CleanName(name, out _)!;
 
-        if (file?.TryGetLocalPath() is not { } path) return;
+        if (MacroLibrary.Exists(name) &&
+            !await ConfirmAsync("Save macro", "Replace \"" + name + "\"?",
+                "A saved macro already has that name. Saving replaces it with this one.", "Replace", "Cancel"))
+            return;
 
         try
         {
-            macro.Name = Path.GetFileNameWithoutExtension(path);
-            macro.Save(path);
-            transientMessage = "Saved " + Path.GetFileName(path) + ".";
+            MacroLibrary.Save(name, macro);
+            macro.Name = name;
+            SaveCurrentMacro();
+            transientMessage = "Saved \"" + name + "\".";
+            RefreshLibrary(name);
         }
         catch (Exception ex)
         {
@@ -934,15 +1060,200 @@ public partial class MainWindow : Window
         UpdateControls();
     }
 
-    static string CurrentMacroPath => Path.Combine(Macro.DefaultFolder, CurrentMacroFile);
+    /// <summary>Whether the macro being edited is empty or exactly as saved, so replacing it loses nothing.</summary>
+    bool EditedMacroIsSafe()
+    {
+        if (macro.Steps.Count == 0) return true;
+        if (string.IsNullOrEmpty(macro.Name) || !MacroLibrary.Exists(macro.Name)) return false;
+        var saved = MacroLibrary.Load(macro.Name);
+        return saved != null && saved.ToJson() == new Macro { Name = macro.Name, Steps = macro.Steps }.ToJson();
+    }
+
+    async System.Threading.Tasks.Task LoadFromLibraryAsync()
+    {
+        if (SelectedLibraryName is not { } name || IsBusy || IsRecording) return;
+        if (!EditedMacroIsSafe() &&
+            !await ConfirmAsync("Load macro", "Replace the macro being edited?",
+                "The steps above haven't been saved. Loading \"" + name + "\" replaces them.", "Load", "Cancel"))
+            return;
+
+        var loaded = MacroLibrary.Load(name);
+        if (loaded == null)
+        {
+            transientMessage = "Couldn't read \"" + name + "\". It may be from a newer version.";
+            UpdateControls();
+            return;
+        }
+        // Keep the file in the current format once it's been brought up to date.
+        if (loaded.UpgradeNote != null)
+        {
+            try { MacroLibrary.Save(name, loaded); }
+            catch (Exception) { /* it still loads; it'll just be upgraded again next time */ }
+        }
+
+        macro.Steps.Clear();
+        macro.Steps.AddRange(loaded.Steps);
+        macro.Name = name;
+        transientMessage = "Loaded \"" + name + "\"." + (loaded.UpgradeNote is { } note ? " " + note : "");
+        RebuildStepRows();
+        SaveCurrentMacro();
+        UpdateControls();
+    }
+
+    async System.Threading.Tasks.Task RenameInLibraryAsync()
+    {
+        if (SelectedLibraryName is not { } from) return;
+        var to = await PromptAsync("Rename macro", "New name for \"" + from + "\"", from, "Rename", text =>
+        {
+            var clean = MacroLibrary.CleanName(text, out var problem);
+            if (clean == null) return problem;
+            return !clean.Equals(from, StringComparison.OrdinalIgnoreCase) && MacroLibrary.Exists(clean)
+                ? "Another saved macro already has that name."
+                : null;
+        });
+        if (to == null) return;
+        to = MacroLibrary.CleanName(to, out _)!;
+        if (to == from) return;
+
+        try
+        {
+            MacroLibrary.Rename(from, to);
+            if (macro.Name == from)
+            {
+                macro.Name = to;
+                SaveCurrentMacro();
+            }
+            transientMessage = "Renamed \"" + from + "\" to \"" + to + "\".";
+            RefreshLibrary(to);
+        }
+        catch (Exception ex)
+        {
+            transientMessage = "Couldn't rename it: " + ex.Message;
+        }
+        UpdateControls();
+    }
+
+    async System.Threading.Tasks.Task DeleteFromLibraryAsync()
+    {
+        if (SelectedLibraryName is not { } name) return;
+        if (!await ConfirmAsync("Delete macro", "Delete \"" + name + "\"?",
+                "It's removed from Saved macros for good. The macro being edited above isn't affected.", "Delete", "Cancel"))
+            return;
+        try
+        {
+            MacroLibrary.Delete(name);
+            transientMessage = "Deleted \"" + name + "\".";
+        }
+        catch (Exception ex)
+        {
+            transientMessage = "Couldn't delete it: " + ex.Message;
+        }
+        RefreshLibrary();
+    }
+
+    async System.Threading.Tasks.Task DownloadFromLibraryAsync()
+    {
+        if (SelectedLibraryName is not { } name) return;
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Download macro",
+            SuggestedFileName = name + ".json",
+            DefaultExtension = "json",
+            FileTypeChoices = [MacroFileType]
+        });
+        if (file?.TryGetLocalPath() is not { } path) return;
+
+        try
+        {
+            File.Copy(MacroLibrary.PathOf(name), path, overwrite: true);
+            transientMessage = "Downloaded \"" + name + "\" to " + path + ".";
+        }
+        catch (Exception ex)
+        {
+            transientMessage = "Couldn't download it: " + ex.Message;
+        }
+        UpdateControls();
+    }
+
+    async System.Threading.Tasks.Task ImportToLibraryAsync()
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import macros",
+            AllowMultiple = true,
+            FileTypeFilter = [MacroFileType]
+        });
+        if (files.Count == 0) return;
+
+        var imported = new List<string>();
+        var failed = new List<string>();
+        string? notes = null;
+        foreach (var file in files)
+        {
+            var path = file.TryGetLocalPath();
+            var loaded = path == null ? null : Macro.Load(path);
+            if (loaded == null)
+            {
+                failed.Add(file.Name);
+                continue;
+            }
+            string baseName = MacroLibrary.CleanName(Path.GetFileNameWithoutExtension(file.Name), out _)
+                              ?? MacroLibrary.CleanName(loaded.Name, out _)
+                              ?? "Imported macro";
+            string name = MacroLibrary.FreeName(baseName);
+            try
+            {
+                MacroLibrary.Save(name, loaded);
+                imported.Add(name);
+                if (loaded.UpgradeNote != null) notes = loaded.UpgradeNote;
+            }
+            catch (Exception)
+            {
+                failed.Add(file.Name);
+            }
+        }
+
+        var parts = new List<string>();
+        if (imported.Count > 0) parts.Add("Imported " + string.Join(", ", imported.Select(n => "\"" + n + "\"")) + ".");
+        if (failed.Count > 0) parts.Add(string.Join(", ", failed) + (failed.Count == 1 ? " isn't" : " aren't") + " a macro this version can read.");
+        if (notes != null) parts.Add(notes);
+        transientMessage = string.Join(" ", parts);
+        RefreshLibrary(imported.LastOrDefault());
+    }
+
+    /// <summary>The macro being edited, kept between sessions.</summary>
+    static string CurrentMacroPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AutoClicker", CurrentMacroFile);
+
+    /// <summary>Where the macro being edited was kept before 3.0, inside what's now the saved macros folder.</summary>
+    static string OldCurrentMacroPath => Path.Combine(Macro.DefaultFolder, MacroLibrary.OldWorkingCopyName + ".json");
 
     void LoadCurrentMacro()
     {
         var loaded = Macro.Load(CurrentMacroPath);
+        if (loaded == null && File.Exists(OldCurrentMacroPath))
+        {
+            loaded = Macro.Load(OldCurrentMacroPath);
+            if (loaded != null)
+            {
+                // Move it out of the saved macros folder, so it doesn't show up as a saved macro.
+                try
+                {
+                    loaded.Save(CurrentMacroPath);
+                    File.Delete(OldCurrentMacroPath);
+                }
+                catch (Exception) { /* try again next start */ }
+            }
+        }
         if (loaded != null)
         {
             macro.Steps.AddRange(loaded.Steps);
             macro.Name = loaded.Name;
+            if (loaded.UpgradeNote != null)
+            {
+                transientMessage = "The macro was updated for this version. " + loaded.UpgradeNote;
+                SaveCurrentMacro();
+            }
         }
         RebuildStepRows();
     }
@@ -950,7 +1261,7 @@ public partial class MainWindow : Window
     void SaveCurrentMacro()
     {
         try { macro.Save(CurrentMacroPath); }
-        catch (Exception) { /* the working copy is a convenience; Save... reports real failures */ }
+        catch (Exception) { /* the working copy is a convenience; Save… reports real failures */ }
     }
 
     // ---------------------------------------------------------------- updates
@@ -1066,6 +1377,72 @@ public partial class MainWindow : Window
         yesButton.Click += (_, _) => dialog.Close(true);
         noButton.Click += (_, _) => dialog.Close(false);
         return await dialog.ShowDialog<bool>(this);
+    }
+
+    /// <summary>
+    /// Asks for a line of text. <paramref name="problem"/> says what's wrong with an answer (null
+    /// when it's fine), shown under the box. Returns the text, or null if cancelled.
+    /// </summary>
+    async System.Threading.Tasks.Task<string?> PromptAsync(string title, string heading, string initial, string yes,
+        Func<string, string?> problem)
+    {
+        var box = new TextBox { Text = initial, MaxLength = MacroLibrary.MaxNameLength };
+        var error = new TextBlock
+        {
+            Foreground = Avalonia.Media.Brushes.IndianRed, TextWrapping = Avalonia.Media.TextWrapping.Wrap, IsVisible = false
+        };
+        var yesButton = new Button { Content = yes, MinWidth = 90, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, IsDefault = true };
+        yesButton.Classes.Add("accent");
+        var noButton = new Button { Content = "Cancel", MinWidth = 90, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, IsCancel = true };
+
+        var dialog = new Window
+        {
+            Title = title,
+            Icon = Icon,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            CanResize = false,
+            ShowInTaskbar = false,
+            CanMinimize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 12,
+                Width = 360,
+                Children =
+                {
+                    new TextBlock { Text = heading, FontWeight = Avalonia.Media.FontWeight.SemiBold, FontSize = 15, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                    box,
+                    error,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Margin = new Thickness(0, 6, 0, 0),
+                        Children = { yesButton, noButton }
+                    }
+                }
+            }
+        };
+        yesButton.Click += (_, _) =>
+        {
+            string text = box.Text ?? "";
+            if (problem(text) is { } trouble)
+            {
+                error.Text = trouble;
+                error.IsVisible = true;
+                return;
+            }
+            dialog.Close(text);
+        };
+        noButton.Click += (_, _) => dialog.Close(null);
+        dialog.Opened += (_, _) =>
+        {
+            box.Focus();
+            box.SelectAll();
+        };
+        return await dialog.ShowDialog<string?>(this);
     }
 
     // ---------------------------------------------------------------- pick a point

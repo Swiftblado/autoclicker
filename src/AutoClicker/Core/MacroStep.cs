@@ -21,8 +21,28 @@ public enum StepKind
     Key,
     /// <summary>Do nothing for a while.</summary>
     Wait,
-    /// <summary>Look at the screen for a color, a pattern of colors, or an image, and act on what's there.</summary>
-    Check
+    /// <summary>
+    /// Old macros only (before 3.0): look at the screen and act on it. Now a check lives inside a
+    /// <see cref="Condition"/>; <see cref="MacroUpgrade"/> turns these into If/While blocks on load.
+    /// </summary>
+    Check,
+    /// <summary>Runs the lines below (up to the matching Else if, Else or End if) when its condition is true.</summary>
+    If,
+    /// <summary>Inside an If: tried when everything above it in the same If was false.</summary>
+    ElseIf,
+    /// <summary>Inside an If: runs when nothing above it in the same If was true.</summary>
+    Else,
+    EndIf,
+    /// <summary>Repeats the lines up to End while for as long as its condition stays true.</summary>
+    While,
+    EndWhile,
+    /// <summary>Repeats the lines up to End for a number of times, or for a number of seconds.</summary>
+    For,
+    EndFor,
+    /// <summary>Carries on from another line.</summary>
+    GoTo,
+    /// <summary>Ends the whole run, like pressing Stop.</summary>
+    Stop
 }
 
 /// <summary>What a <see cref="StepKind.Check"/> looks for.</summary>
@@ -132,7 +152,46 @@ public sealed class MacroStep
     /// <summary>Step number (counted from 1) to go to when not found.</summary>
     public int MissingStep { get; set; } = 1;
 
+    // If / Else if / While
+    /// <summary>What an If, Else if or While tests: screen checks joined with and / or / not.</summary>
+    public Condition? Condition { get; set; }
+
+    // While
+    /// <summary>Least time between two checks of a While's condition, in ms. 0 checks nonstop.</summary>
+    public int IntervalMs { get; set; } = DefaultIntervalMs;
+    /// <summary>How long a While may keep looping, in ms; then the macro carries on after it. 0 = no limit.</summary>
+    public int LimitMs { get; set; } = DefaultLimitMs;
+
+    public const int DefaultIntervalMs = 100, DefaultLimitMs = 60_000;
+    /// <summary>Below this, checking a While's condition starts to cost real CPU time.</summary>
+    public const int BusyIntervalMs = 10;
+
+    // For
+    /// <summary>For: count seconds (<see cref="DurationMs"/>) rather than rounds (<see cref="Count"/>).</summary>
+    public bool ForSeconds { get; set; }
+    /// <summary>For: how many rounds.</summary>
+    public int Count { get; set; } = 10;
+
+    // Go to
+    /// <summary>Go to: the line to carry on from, counted from 1.</summary>
+    public int Line { get; set; } = 1;
+
     [JsonIgnore] public PixelRect Area => new(AreaX, AreaY, AreaWidth, AreaHeight);
+
+    /// <summary>If, Else if, Else, End if, While, End while, For, End for, Go to and Stop.</summary>
+    [JsonIgnore] public bool IsControl => Kind >= StepKind.If;
+
+    /// <summary>The first line of a block: If, While or For.</summary>
+    [JsonIgnore] public bool OpensBlock => Kind is StepKind.If or StepKind.While or StepKind.For;
+
+    /// <summary>The line that closes a block of this kind, or null if it isn't a block's first line.</summary>
+    [JsonIgnore] public StepKind? Closer => Kind switch
+    {
+        StepKind.If => StepKind.EndIf,
+        StepKind.While => StepKind.EndWhile,
+        StepKind.For => StepKind.EndFor,
+        _ => null
+    };
 
     [JsonIgnore] public PixelPoint From => new(FromX, FromY);
     [JsonIgnore] public PixelPoint To => new(ToX, ToY);
@@ -162,6 +221,25 @@ public sealed class MacroStep
     public static MacroStep MakeWait(int ms) =>
         new() { Kind = StepKind.Wait, DurationMs = ms };
 
+    public static MacroStep MakeIf(Condition condition, bool elseIf = false) =>
+        new() { Kind = elseIf ? StepKind.ElseIf : StepKind.If, Condition = condition };
+
+    public static MacroStep MakeWhile(Condition condition, int intervalMs, int limitMs) =>
+        new() { Kind = StepKind.While, Condition = condition, IntervalMs = intervalMs, LimitMs = limitMs };
+
+    public static MacroStep MakeForTimes(int count) =>
+        new() { Kind = StepKind.For, Count = count };
+
+    public static MacroStep MakeForSeconds(int ms) =>
+        new() { Kind = StepKind.For, ForSeconds = true, DurationMs = ms };
+
+    public static MacroStep MakeGoTo(int line) => new() { Kind = StepKind.GoTo, Line = line };
+
+    public static MacroStep Make(StepKind kind) => new() { Kind = kind };
+
+    /// <summary>A fresh screen check, as kept inside a <see cref="Condition"/>.</summary>
+    public static MacroStep NewCheck() => new() { Kind = StepKind.Check, Where = CheckArea.Point };
+
     /// <summary>The one-line form shown in the step list.</summary>
     public string Describe()
     {
@@ -190,14 +268,45 @@ public sealed class MacroStep
                 return "Wait " + Time(DurationMs);
 
             case StepKind.Check:
-                return DescribeCheck();
+                return "Look for " + DescribeLook();
+
+            case StepKind.If:
+                return "If " + DescribeCondition();
+            case StepKind.ElseIf:
+                return "Else if " + DescribeCondition();
+            case StepKind.Else:
+                return "Else";
+            case StepKind.EndIf:
+                return "End if";
+
+            case StepKind.While:
+                string every = IntervalMs <= 0 ? "checked nonstop" : "checked every " + Time(IntervalMs);
+                string limit = LimitMs > 0 ? ", up to " + Time(LimitMs) : "";
+                return "While " + DescribeCondition() + "   (" + every + limit + ")";
+            case StepKind.EndWhile:
+                return "End while";
+
+            case StepKind.For:
+                return ForSeconds
+                    ? "For " + Time(DurationMs)
+                    : "For " + Count.ToString(CultureInfo.CurrentCulture) + (Count == 1 ? " time" : " times");
+            case StepKind.EndFor:
+                return "End for";
+
+            case StepKind.GoTo:
+                return "Go to line " + Line.ToString(CultureInfo.CurrentCulture);
+            case StepKind.Stop:
+                return "Stop the macro";
 
             default:
                 return Kind.ToString();
         }
     }
 
-    string DescribeCheck()
+    string DescribeCondition() => Condition?.Describe() ?? "(no condition)";
+
+    /// <summary>What a check looks for and where, e.g. "#FF0000 at (10, 20)" or "image anywhere on screen".</summary>
+    public string DescribeLook()
     {
         string what = Target switch
         {
@@ -212,27 +321,16 @@ public sealed class MacroStep
             (_, CheckArea.Screen) => " anywhere on screen",
             _ => " in " + Point(new PixelPoint(AreaX, AreaY)) + " " + AreaWidth + "×" + AreaHeight
         };
-
-        string found = Branch(OnFound, FoundStep);
-        if (ClickFound) found = Button.ToString().ToLowerInvariant() + " click it" + (found == "" ? "" : ", " + found);
-        if (found == "") found = "continue";
-        string missing = Branch(OnMissing, MissingStep);
-        if (missing == "") missing = "continue";
-
-        if (WaitUntilFound)
-        {
-            string limit = TimeoutMs > 0 ? " (up to " + Time(TimeoutMs) + ")" : "";
-            return "Wait for " + what + where + limit + " → " + found +
-                   (TimeoutMs > 0 ? "; not seen → " + missing : "");
-        }
-        return "If " + what + where + " → " + found + "; else → " + missing;
+        return what + where;
     }
 
-    static string Branch(CheckBranch branch, int step) => branch switch
+    /// <summary>What's missing from a screen check, in words for the user; null when it's complete.</summary>
+    public string? CheckProblem() => Target switch
     {
-        CheckBranch.GoTo => "go to step " + step,
-        CheckBranch.Stop => "stop",
-        _ => ""
+        CheckTarget.Color when ColorMatch.Normalize(Color) == null => "has no valid color. Use a hex code like #FF8800.",
+        CheckTarget.Colors when Points.Count == 0 => "has no colors to look for. Add at least one point.",
+        CheckTarget.Image when string.IsNullOrEmpty(ImagePng) => "has no image. Capture one or load a PNG.",
+        _ => null
     };
 
     string DescribeModifiers()
@@ -257,6 +355,7 @@ public sealed class MacroStep
     {
         var clone = (MacroStep)MemberwiseClone();
         clone.Points = Points.Select(point => point.Clone()).ToList();
+        clone.Condition = Condition?.Clone();
         return clone;
     }
 }

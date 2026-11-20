@@ -18,8 +18,10 @@
       </StackPanel>
     </Border>
 
-    <StackPanel Orientation="Horizontal" Spacing="10">
-      <TextBlock Text="Automate:" Classes="label" />
+    <StackPanel Orientation="Horizontal" Spacing="10" Margin="2,0,0,4">
+      <Image Source="/Assets/icon.png" Width="26" Height="26" VerticalAlignment="Center" />
+      <TextBlock Text="Auto Clicker" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,24,0" />
+      <TextBlock Text="Automate" Classes="unit" Margin="0" />
       <ComboBox x:Name="ModeBox" Width="180" SelectedIndex="0">
         <ComboBoxItem>Mouse clicks</ComboBoxItem>
         <ComboBoxItem>Mouse drags</ComboBoxItem>
@@ -167,29 +169,37 @@
                 <TextBlock x:Name="MacroSummary" Classes="unit" VerticalAlignment="Center" Text="No steps yet." />
               </StackPanel>
 
-              <ListBox x:Name="StepList" Height="150" />
+              <ListBox x:Name="StepList" Height="230" Classes="steps" />
 
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <Button x:Name="StepUpButton" Content="Up" Width="54" />
                 <Button x:Name="StepDownButton" Content="Down" Width="66" />
-                <Button x:Name="StepDeleteButton" Content="Delete" Width="72" />
+                <Button x:Name="StepDeleteButton" Content="Delete" Width="72"
+                        ToolTip.Tip="Deletes the selected line. On an If, While or For (or its End), the whole block's frame goes, and the lines inside it stay." />
                 <Button x:Name="StepClearButton" Content="Clear" Width="64" />
-                <Button x:Name="MacroOpenButton" Content="Open..." Width="78" Margin="12,0,0,0" />
-                <Button x:Name="MacroSaveButton" Content="Save..." Width="78" />
+                <Button x:Name="MacroSaveButton" Content="Save…" Width="78" Margin="12,0,0,0" Classes="accent"
+                        ToolTip.Tip="Saves this macro under a name, in Saved macros below." />
               </StackPanel>
 
-              <Border BorderBrush="#40808080" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+              <Border BorderBrush="#262C38" BorderThickness="0,1,0,0" Padding="0,10,0,0">
                 <StackPanel Spacing="8">
                   <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="Add step:" Classes="label" Margin="0" />
-                    <ComboBox x:Name="StepTypeBox" Width="140" SelectedIndex="0">
+                    <TextBlock Text="Add:" Classes="label" Margin="0" />
+                    <ComboBox x:Name="StepTypeBox" Width="140" SelectedIndex="0" MaxDropDownHeight="420">
                       <ComboBoxItem>Click</ComboBoxItem>
                       <ComboBoxItem>Drag</ComboBoxItem>
                       <ComboBoxItem>Key</ComboBoxItem>
                       <ComboBoxItem>Wait</ComboBoxItem>
-                      <ComboBoxItem>Check screen</ComboBoxItem>
+                      <ComboBoxItem>If</ComboBoxItem>
+                      <ComboBoxItem>Else if</ComboBoxItem>
+                      <ComboBoxItem>Else</ComboBoxItem>
+                      <ComboBoxItem>While</ComboBoxItem>
+                      <ComboBoxItem>For</ComboBoxItem>
+                      <ComboBoxItem>Go to line</ComboBoxItem>
+                      <ComboBoxItem>Stop macro</ComboBoxItem>
                     </ComboBox>
-                    <Button x:Name="StepAddButton" Content="Add" Width="70" />
+                    <Button x:Name="StepAddButton" Content="Add" Width="70" Classes="accent"
+                            ToolTip.Tip="Adds it below the selected line (or at the end). If, While and For come with their End line." />
                     <Button x:Name="StepReplaceButton" Content="Replace" Width="86" />
                   </StackPanel>
 
@@ -276,10 +286,46 @@
                     <TextBlock Text="ms" Classes="unit" />
                   </StackPanel>
 
-                  <TextBlock x:Name="StepCheckPanel" IsVisible="False" TextWrapping="Wrap" Opacity="0.8" MaxWidth="520"
-                             Text="Looks for a color, several colors, or an image on screen, then clicks it, jumps to a step, or stops. Add sets up a new check; Replace edits the selected one (or double-click it)." />
+                  <StackPanel x:Name="StepForPanel" Orientation="Horizontal" Spacing="6" IsVisible="False">
+                    <TextBlock Text="For" Classes="unit" Margin="0,0,2,0" />
+                    <NumericUpDown x:Name="StepForAmount" Width="90" Minimum="0" Maximum="10000000" Value="10"
+                                   Increment="1" FormatString="0.##" />
+                    <ComboBox x:Name="StepForUnit" Width="100" SelectedIndex="0">
+                      <ComboBoxItem>times</ComboBoxItem>
+                      <ComboBoxItem>seconds</ComboBoxItem>
+                    </ComboBox>
+                  </StackPanel>
+
+                  <StackPanel x:Name="StepGoToPanel" Orientation="Horizontal" Spacing="6" IsVisible="False">
+                    <TextBlock Text="Go to line" Classes="unit" Margin="0,0,2,0" />
+                    <NumericUpDown x:Name="StepGoToLine" Width="80" Minimum="1" Maximum="100000" Value="1" FormatString="0" />
+                  </StackPanel>
+
+                  <TextBlock x:Name="StepControlHint" IsVisible="False" TextWrapping="Wrap" Classes="hint" MaxWidth="470" />
                 </StackPanel>
               </Border>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- ====================================================== saved macros -->
+        <StackPanel x:Name="LibrarySection" Spacing="2" IsVisible="False">
+          <TextBlock Text="Saved macros" Classes="sectionTitle" />
+          <Border x:Name="LibraryCard" Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock x:Name="LibraryEmpty" Classes="hint" TextWrapping="Wrap"
+                         Text="No saved macros yet. Build one above and press Save…, or import a macro file." />
+              <ListBox x:Name="LibraryList" Height="120" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button x:Name="LibraryLoadButton" Content="Load" Width="64"
+                        ToolTip.Tip="Opens the selected macro above, in place of the one there now." />
+                <Button x:Name="LibraryRenameButton" Content="Rename…" />
+                <Button x:Name="LibraryDeleteButton" Content="Delete" />
+                <Button x:Name="LibraryDownloadButton" Content="Download…" Margin="12,0,0,0"
+                        ToolTip.Tip="Saves a copy of the selected macro as a file wherever you choose, to keep or share." />
+                <Button x:Name="LibraryImportButton" Content="Import…"
+                        ToolTip.Tip="Adds a macro file to this list." />
+              </StackPanel>
             </StackPanel>
           </Border>
         </StackPanel>

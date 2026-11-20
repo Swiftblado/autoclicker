@@ -5,7 +5,7 @@ A small, portable auto clicker and key presser for **Windows, macOS and Linux**.
 - **Mouse clicks**: left, right or middle button, single or double click, at the cursor or at a fixed spot (use **Pick** to grab a spot). A **full click** (the default) holds the button down for 20, 35 or 50 ms like a real press, or for any time from 0 to 1000 ms with **Custom…**; a **half click** lets go instantly, like a light tap on a touchpad. A custom hold under 17 ms (one frame at 60 fps) counts as a half click. The **?** next to the hold explains which apps and games register short clicks. Macro click steps have the same choice.
 - **Mouse drags**: hold a button down and glide from one point to another over a set time.
 - **Key presses**: any key, optionally with Ctrl, Shift, Alt/Option or Win/Cmd/Super, and a set hold time.
-- **Macros**: record what you do and replay it, or build a sequence by hand — clicks, drags, key presses, waits, and **Check screen** steps that look for a color, a pattern of colors or an image and then click it, jump to another step or stop. Reorder or delete steps, and save macros as `.json` files to reuse later.
+- **Macros**: record what you do and replay it, or build one by hand from clicks, drags, key presses and waits, with **If / Else if / Else**, **While** and **For** blocks, **Go to line** and **Stop**. Ifs and Whiles test the screen for a color, a pattern of colors or an image, combined with **and**, **or** and **not**. Saved macros are listed in the app, and any of them can be downloaded as a `.json` file or imported from one.
 - **Timing**: an interval from 1 ms up to 24 hours, optional random variation (±ms), and either repeat until stopped or a set number of times.
 - **Global hotkey**: F6 by default (F1–F12 selectable) starts and stops it from any window.
 - **Key bindings**: save a setup (clicks, drags, key presses or a macro, with its timing) under a name and its own key or combination, like F7 or Ctrl+1; that key starts and stops it from any window. Turn on **Run alongside others** for bindings that may run at the same time; when two runs both need the mouse they take turns, so a click never lands in the middle of another run's click or drag. Bindings are kept in `bindings.json` next to the settings file.
@@ -43,17 +43,31 @@ Clicking **Start** instead counts down 3 seconds first, so you can switch to the
 Pick **Macro** from the dropdown, then either:
 
 - **Record**: press **Record**, wait for the 2-second countdown, do the thing, then press **F6** to finish. What you did is added to the list as steps. The key you use to stop isn't recorded.
-- **Build by hand**: choose a step type under **Add step**, fill in the details (**Pick** grabs a screen position after a countdown) and press **Add**. Select a step to move, delete or **Replace** it.
+- **Build by hand**: choose a line type under **Add**, fill in the details (**Pick** grabs a screen position after a countdown) and press **Add**. The new line goes below the selected one (or at the end). Select a line to move, delete or **Replace** it.
 
 **Picking a spot on the screen** works the same everywhere (**Pick**, **Dropper**, **Pick & add**, **Drag area…**, **Capture from screen…**). The app's windows get out of the way, and a countdown next to the mouse shows the time left. When it runs out, the spot under the mouse is taken (a drag-a-box that hasn't been started is cancelled). **Time to pick a spot** under **Options** sets the time, from 1 to 60 seconds (3 by default). Turn on **A click picks right away** to pick with a left click instead of waiting. That click is held back from whatever is under the mouse.
 
 Recording keeps the shape of what you did rather than a literal trace: a press and release in one spot becomes a click, a press and release apart becomes a drag in a straight line between them, a key with modifiers held becomes one step, and the pauses in between become waits. Cursor movements on their own aren't recorded, since every click and drag carries its own coordinates.
 
-**Save...** and **Open...** keep macros as `.json` files (in `Macros` next to the settings file by default). Whatever is in the list is remembered between runs, and the **Repeat the macro** section controls how often the whole sequence replays.
+**Save…** asks for a name and keeps the macro under **Saved macros**. There, **Load** opens one (it asks first if the macro being edited isn't saved), **Rename…** and **Delete** do what they say, **Download…** saves a copy as a `.json` file anywhere you like, and **Import…** adds macro files to the list. Saved macros live in `Macros` next to the settings file. The macro being edited is remembered between runs, and the **Repeat the macro** section controls how often the whole thing replays.
 
-#### Check screen steps
+#### If, While, For and Go to
 
-A **Check screen** step looks at the screen and decides what the macro does next. Choose it under **Add step** and press **Add**. To change a check later, double-click it in the list (or select it and press **Replace**).
+Lines inside a block are indented, with a guide line per level, and blocks can go inside each other.
+
+- **If** runs the lines up to its **End if** only when its condition is true. **Else if** (tried when everything above it in the If was false) and **Else** (when nothing above was true) go inside an If, below its lines.
+- **While** repeats the lines up to **End while** for as long as its condition is true. It checks the condition every so often (100 ms by default; 0 checks nonstop, and anything under 10 ms shows a warning about CPU use) and stops looping after a time limit (60 s by default; 0 means no limit), after which the macro carries on below **End while**.
+- **For** repeats the lines up to **End for** a number of **times**, or for a number of **seconds**. When the time is up, the round in progress finishes first.
+- **Go to line** carries on from another line. Jumping out of a loop ends it, and jumping into a block runs its lines as if its condition were true. Line numbers in Go to lines follow along when lines are moved, added or deleted.
+- **Stop macro** ends the whole run, like pressing Stop.
+
+Adding an If, While or For adds its End line too and selects it, so the next lines you add go inside. **Delete** on an If, While or For (or its End line) removes the block's frame (its Else if, Else and End lines too) and keeps the lines inside. Double-click an If, Else if or While to change its condition, or a For or Go to line to load it into the editor for **Replace**. A macro whose blocks don't match up says what's wrong above the list and won't start.
+
+#### Conditions and screen checks
+
+Adding an If, Else if or While opens its condition. A condition is made of **screen checks**, each of which says found or not found. Tick **not** to turn one around. A group of items is true when **all** of them are (and) or when **any** one is (or), and groups can go inside groups, for things like (A and not B) or C. **Test now** works the whole condition out against the screen right away.
+
+Each screen check has these settings:
 
 - **Look for**:
   - **A color**: type a hex code (`#FF8800`), choose one on the color wheel, or use **Dropper**: hover over any pixel and its color is taken after 3 seconds, along with its position.
@@ -61,8 +75,6 @@ A **Check screen** step looks at the screen and decides what the macro does next
   - **An image**: **Capture from screen…** dims the screen so you can drag a box around what to look for, or **Load PNG…** opens a picture (transparent parts don't have to match). The image is saved inside the macro file.
 - **Where**: one point (colors only), an area (drag it out with **Drag area…** or type it in), or anywhere on screen. Smaller areas are faster.
 - **Tolerance**: how far each of red, green and blue may be off, 0–255 (default 10; 0 means exact). Images also tolerate up to 2% of their pixels not matching, so a blinking cursor or a small animation doesn't stop a match.
-- **When**: **Check once**, or **Wait until it appears** (it looks again every 50 ms) with an optional time limit.
-- **Then**: if found, optionally click on it (the middle of an image, the matching pixel, or the pattern's first point). Then continue, **go to step** N, or **stop the macro**. You choose separately what happens when it isn't found or doesn't appear in time. Going to an earlier step makes a loop. Going to a later step skips the ones in between. Step numbers update when steps are moved or deleted.
 
 **Test now** in the check's window runs it right away and tells you where it was found and how long the search took. macOS needs the Screen Recording permission for checks. On Linux they need X11.
 
@@ -112,6 +124,8 @@ dotnet publish src/AutoClicker/AutoClicker.csproj -c Release -r linux-x64 \
 src/AutoClicker/
   Core/      Runner.cs (timing loop), Settings.cs, InputActions.cs,
              Macro.cs + MacroStep.cs + MacroAction.cs (macros),
+             MacroBlocks.cs + Condition.cs (If/While/For, and/or/not),
+             MacroLibrary.cs (saved macros), MacroUpgrade.cs (pre-3.0 macros),
              ScreenCheck.cs + ImageTemplate.cs (color/image checks)
              LagGovernor.cs + LagMonitor.cs (slowing down for lag),
              RunSetup.cs + RunSession.cs (one run each), KeyBinding.cs

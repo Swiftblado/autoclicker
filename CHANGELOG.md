@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.0.0 (November 20, 2026)
+
+- Macros get control flow: If / Else if / Else, While and For blocks, plus Go to line and Stop macro. Lines inside a block are indented, and blocks can go inside each other.
+- If and While test a condition made of screen checks, combined with and, or and not, in groups that can go inside each other, like (A and not B) or C. Test now works out the whole condition right away.
+- Screen checks now only say found or not found; what happens next is up to the If or While around them. Macros from before 3.0 are converted when opened: "wait until it appears" becomes a While, "go to step" becomes Go to line, and "click on it" becomes a click at the same spot. Checks that searched an area or the whole screen can't click where they found something anymore, so those clicks are left out (the app says so when it opens such a macro).
+- While loops check their condition every 100 ms by default (0 checks nonstop; under 10 ms shows a warning about CPU use) and stop after 60 seconds by default (0 means no limit), then the macro carries on after the loop.
+- For loops run a number of times or a number of seconds; a timed loop always finishes the round in progress.
+- New lines go below the selected line instead of at the end. Adding an If, While or For adds its End line too. Deleting a block's first or End line removes the block's frame and keeps the lines inside.
+- Saved macros: Save… keeps the macro under a name in a list in the Macro tab, where it can be loaded, renamed, deleted, downloaded as a .json file, or imported from one. Macros saved in the Macros folder by earlier versions show up in the list.
+- A new dark look with a blue accent, rounder controls and cards, and a cleaner header.
+
 ## v2.7.1 (November 16, 2026)
 
 - Fixed: Dropper and Pick & add could take the color of the Auto Clicker window itself instead of what was under it. The color is now read while the windows are still hidden.
