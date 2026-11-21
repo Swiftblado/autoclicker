@@ -1,25 +1,27 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using AutoClicker.Core;
 using AutoClicker.Input;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 
 namespace AutoClicker.Views;
 
 /// <summary>
-/// Builds the condition of an If, Else if or While out of screen checks, joined with "and" and
-/// "or", in nested groups, each one optionally turned around with "not". For a While it also
-/// sets how often the condition is looked at and for how long the loop may run.
+/// Builds the condition of an If, Else if or While: a list of screen checks, each one optionally
+/// turned around with "not", with an and/or switch between each check and the one above it.
+/// Groups (brackets) are there for the rare condition that needs them. For a While it also sets
+/// how often the condition is looked at and for how long the loop may run.
 /// </summary>
 sealed class ConditionWindow : Window
 {
     public sealed record Result(Condition Condition, int IntervalMs, int LimitMs);
 
-    static readonly IBrush Accent = new SolidColorBrush(Color.Parse("#3B82F6"));
     static readonly IBrush Muted = new SolidColorBrush(Color.Parse("#8B95A7"));
     static readonly IBrush Warning = new SolidColorBrush(Color.Parse("#FBBF24"));
     static readonly IBrush GroupLine = new SolidColorBrush(Color.Parse("#3B4252"));
@@ -34,11 +36,13 @@ sealed class ConditionWindow : Window
 
     readonly NumericUpDown interval = new()
     {
-        Minimum = 0, Maximum = 3_600_000, Width = 90, FormatString = "0", Increment = 10, VerticalAlignment = VerticalAlignment.Center
+        Minimum = 0, Maximum = 3_600_000, Width = 90, FormatString = "0", Increment = 10, VerticalAlignment = VerticalAlignment.Center,
+        [ToolTip.TipProperty] = "The least time between two looks at the condition. Longer is lighter on your computer; 0 looks again straight away."
     };
     readonly NumericUpDown limit = new()
     {
-        Minimum = 0, Maximum = 86_400, Width = 90, FormatString = "0.##", Increment = 1, VerticalAlignment = VerticalAlignment.Center
+        Minimum = 0, Maximum = 86_400, Width = 90, FormatString = "0.##", Increment = 1, VerticalAlignment = VerticalAlignment.Center,
+        [ToolTip.TipProperty] = "After this long the loop stops even if the condition is still true, and the macro carries on after End while. 0 lets it loop for as long as the condition holds."
     };
     readonly TextBlock busyWarning = new()
     {
@@ -46,7 +50,20 @@ sealed class ConditionWindow : Window
         Foreground = Warning, TextWrapping = TextWrapping.Wrap, MaxWidth = 600
     };
 
-    readonly Button testButton = new() { Content = "Test now", Width = 90 };
+    readonly Button ok = new()
+    {
+        Content = "OK", MinWidth = 90, IsDefault = true, HorizontalContentAlignment = HorizontalAlignment.Center, Classes = { "accent" },
+        [ToolTip.TipProperty] = "Saves the condition to the line. It needs at least one screen check."
+    };
+    readonly TextBlock needsCheck = new()
+    {
+        Text = "Add at least one screen check to save.", Foreground = Muted, VerticalAlignment = VerticalAlignment.Center
+    };
+    readonly Button testButton = new()
+    {
+        Content = "Test now", Width = 90,
+        [ToolTip.TipProperty] = "Hides this window, looks at the screen once and says whether the whole condition is true right now."
+    };
     readonly TextBlock testResult = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 460 };
     readonly TextBlock problem = new() { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, IsVisible = false, MaxWidth = 600 };
 
@@ -85,9 +102,6 @@ sealed class ConditionWindow : Window
         Rebuild();
         UpdateWarning();
         testButton.Click += async (_, _) => await TestAsync();
-
-        // A brand-new condition starts by adding its first check.
-        if (root.Items.Count == 0) Opened += async (_, _) => await AddCheckAsync(root);
         Opened += (_, _) => FitOnScreen();
         SizeChanged += (_, _) => FitOnScreen();
     }
@@ -96,8 +110,11 @@ sealed class ConditionWindow : Window
 
     Control Build()
     {
-        var ok = new Button { Content = "OK", MinWidth = 90, IsDefault = true, HorizontalContentAlignment = HorizontalAlignment.Center, Classes = { "accent" } };
-        var cancel = new Button { Content = "Cancel", MinWidth = 90, IsCancel = true, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var cancel = new Button
+        {
+            Content = "Cancel", MinWidth = 90, IsCancel = true, HorizontalContentAlignment = HorizontalAlignment.Center,
+            [ToolTip.TipProperty] = "Closes without changing the line."
+        };
         ok.Click += (_, _) => Accept();
         cancel.Click += (_, _) => Close(null);
 
@@ -114,9 +131,11 @@ sealed class ConditionWindow : Window
                     Background = new SolidColorBrush(Color.Parse("#11141B")),
                     CornerRadius = new CornerRadius(8),
                     Padding = new Thickness(12, 8),
-                    Child = preview
+                    Child = preview,
+                    [ToolTip.TipProperty] = "The whole condition in words. Brackets show which checks go together."
                 },
-                Hint("Each check says found or not found. \"not\" turns one around. A group is true when all of its items are (and) or when any one is (or). Groups can go inside groups, for things like (A and not B) or C."),
+                Hint("Each check says found or not found; tick \"not\" to turn it around. Between two checks, choose \"and\" " +
+                     "(both must be true) or \"or\" (either is enough). \"and\" goes first, so A or B and C means A or (B and C)."),
                 tree
             }
         };
@@ -143,7 +162,18 @@ sealed class ConditionWindow : Window
                 {
                     Row(testButton, testResult),
                     problem,
-                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { ok, cancel } }
+                    new DockPanel
+                    {
+                        Children =
+                        {
+                            new StackPanel
+                            {
+                                [DockPanel.DockProperty] = Dock.Right,
+                                Orientation = Orientation.Horizontal, Spacing = 8, Children = { ok, cancel }
+                            },
+                            needsCheck
+                        }
+                    }
                 }
             }
         };
@@ -153,113 +183,156 @@ sealed class ConditionWindow : Window
             Children =
             {
                 footer,
-                new ScrollViewer { Content = body, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }
+                new ScrollViewer { Content = body, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }
             }
         };
     }
 
-    /// <summary>Redraws the whole tree; it's small, and it keeps the view honest after any change.</summary>
+    /// <summary>Redraws the whole list; it's small, and it keeps the view honest after any change.</summary>
     void Rebuild()
     {
         tree.Children.Clear();
-        tree.Children.Add(GroupView(root, parent: null));
+        tree.Children.Add(ItemsView(root));
         UpdatePreview();
     }
 
     void UpdatePreview()
     {
-        preview.Text = heading + " " + (root.Items.Count == 0 ? "…  (add a check)" : root.Describe());
+        bool hasCheck = root.Checks().Any();
+        preview.Text = heading + " " + (hasCheck ? root.Describe() : "…  (add a screen check)");
+        ok.IsEnabled = hasCheck;
+        needsCheck.IsVisible = !hasCheck;
         ShowProblem(null);
     }
 
-    Control GroupView(Condition group, Condition? parent)
+    /// <summary>A group's items, an and/or switch between each pair, and the buttons that add more.</summary>
+    Control ItemsView(Condition group)
     {
-        var not = new CheckBox { Content = "not", IsChecked = group.Not, VerticalAlignment = VerticalAlignment.Center };
-        not.IsCheckedChanged += (_, _) => { group.Not = not.IsChecked == true; UpdatePreview(); };
-
-        var join = new ComboBox
-        {
-            Width = 250,
-            ItemsSource = new[] { "All of these are true (and)", "Any of these is true (or)" },
-            SelectedIndex = (int)group.Join
-        };
-        join.SelectionChanged += (_, _) => { group.Join = (LogicJoin)Math.Max(0, join.SelectedIndex); Rebuild(); };
-
-        var header = Row(not, join);
-        if (parent != null)
-        {
-            var remove = new Button { Content = "Remove group" };
-            remove.Click += (_, _) => { parent.Items.Remove(group); Rebuild(); };
-            header.Children.Add(remove);
-        }
-
         var items = new StackPanel { Spacing = 4 };
         for (int k = 0; k < group.Items.Count; k++)
         {
-            if (k > 0)
-                items.Children.Add(new TextBlock
-                {
-                    Text = group.Join == LogicJoin.And ? "and" : "or",
-                    Foreground = Accent, FontWeight = FontWeight.SemiBold, Margin = new Thickness(4, 0, 0, 0)
-                });
+            if (k > 0) items.Children.Add(LinkSwitch(group, k));
             var item = group.Items[k];
             items.Children.Add(item.IsGroup ? GroupView(item, group) : CheckView(item, group));
         }
-        if (group.Items.Count == 0) items.Children.Add(Hint("Empty: add a check or a group."));
+        if (group.Items.Count == 0)
+            items.Children.Add(Hint(group == root ? "No checks yet. Press + Screen check… to add the first one." : "Empty group: add a check to it, or remove it."));
 
-        var addCheck = new Button { Content = "+ Check…" };
+        var addCheck = new Button
+        {
+            Content = "+ Screen check…",
+            [ToolTip.TipProperty] = "Opens the screen check editor. The new check goes at the end, joined with \"and\"; switch it to \"or\" if you like."
+        };
         addCheck.Click += async (_, _) => await AddCheckAsync(group);
-        var addGroup = new Button { Content = "+ Group" };
-        addGroup.Click += (_, _) => { group.Items.Add(Condition.Group(group.Join == LogicJoin.And ? LogicJoin.Or : LogicJoin.And)); Rebuild(); };
+        var addGroup = new Button
+        {
+            Content = "+ Group",
+            [ToolTip.TipProperty] = "For brackets that \"and goes first\" can't give, like (A or B) and C: the checks in a group are worked out together, as one item."
+        };
+        addGroup.Click += (_, _) =>
+        {
+            group.Items.Add(new Condition { Join = LogicJoin.And, Link = LogicJoin.And });
+            Rebuild();
+        };
 
-        var content = new StackPanel { Spacing = 6, Children = { header, items, Row(addCheck, addGroup) } };
+        return new StackPanel { Spacing = 6, Children = { items, Row(addCheck, addGroup) } };
+    }
+
+    /// <summary>"and | or" between item <paramref name="index"/> and the one above it.</summary>
+    Control LinkSwitch(Condition group, int index)
+    {
+        var link = group.LinkOf(index);
+        ToggleButton Choice(string text, LogicJoin join, string tip)
+        {
+            var button = new ToggleButton
+            {
+                Content = text, IsChecked = link == join, MinWidth = 52, Padding = new Thickness(8, 2),
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                [ToolTip.TipProperty] = tip
+            };
+            button.Click += (_, _) =>
+            {
+                group.Items[index].Link = join;
+                Rebuild();
+            };
+            return button;
+        }
+        var row = Row(
+            Choice("and", LogicJoin.And, "Both this and the line above must be true."),
+            Choice("or", LogicJoin.Or, "Either this or the line above is enough. \"and\" is worked out before \"or\"."));
+        row.Spacing = 2;
+        row.Margin = new Thickness(22, 0, 0, 0);
+        return row;
+    }
+
+    CheckBox NotBox(Condition item, string tip)
+    {
+        var not = new CheckBox
+        {
+            Content = "not", IsChecked = item.Not, VerticalAlignment = VerticalAlignment.Center,
+            [ToolTip.TipProperty] = tip
+        };
+        not.IsCheckedChanged += (_, _) => { item.Not = not.IsChecked == true; UpdatePreview(); };
+        return not;
+    }
+
+    Control GroupView(Condition group, Condition parent)
+    {
+        var remove = new Button
+        {
+            Content = "Remove group",
+            [ToolTip.TipProperty] = "Removes this group and every check inside it."
+        };
+        remove.Click += (_, _) => { parent.Items.Remove(group); Rebuild(); };
+
+        var header = Row(NotBox(group, "True when the group as a whole is false, and the other way round."),
+            new TextBlock { Text = "Group", FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center }, remove);
+
         return new Border
         {
-            BorderBrush = parent == null ? Brushes.Transparent : GroupLine,
-            BorderThickness = parent == null ? new Thickness(0) : new Thickness(2, 0, 0, 0),
-            Padding = parent == null ? new Thickness(0) : new Thickness(12, 4, 0, 4),
-            Margin = parent == null ? new Thickness(0) : new Thickness(8, 2, 0, 2),
-            Child = content
+            BorderBrush = GroupLine,
+            BorderThickness = new Thickness(2, 0, 0, 0),
+            Padding = new Thickness(12, 4, 0, 4),
+            Margin = new Thickness(8, 2, 0, 2),
+            Child = new StackPanel { Spacing = 6, Children = { header, ItemsView(group) } }
         };
     }
 
     Control CheckView(Condition item, Condition parent)
     {
-        var not = new CheckBox { Content = "not", IsChecked = item.Not, VerticalAlignment = VerticalAlignment.Center };
-        not.IsCheckedChanged += (_, _) => { item.Not = not.IsChecked == true; UpdatePreview(); };
-
+        var check = item.Check!;
         var text = new TextBlock
         {
-            Text = item.Check!.DescribeLook(),
+            Text = check.DescribeLook(),
             Width = 330,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            [ToolTip.TipProperty] = check.DescribeLook()
         };
-        ToolTip.SetTip(text, item.Check.DescribeLook());
 
-        var edit = new Button { Content = "Edit…" };
+        var edit = new Button { Content = "Edit…", [ToolTip.TipProperty] = "Change what this check looks for and where." };
         edit.Click += async (_, _) =>
         {
             if (editingCheck) return;
             editingCheck = true;
             try
             {
-                var changed = await CheckStepWindow.EditAsync(this, backend, item.Check.Clone());
+                var changed = await CheckStepWindow.EditAsync(this, backend, check.Clone());
                 if (changed != null) { item.Check = changed; Rebuild(); }
             }
             finally { editingCheck = false; }
         };
-        var remove = new Button { Content = "Remove" };
+        var remove = new Button { Content = "Remove", [ToolTip.TipProperty] = "Takes this check out of the condition." };
         remove.Click += (_, _) => { parent.Items.Remove(item); Rebuild(); };
 
         var swatch = new Border
         {
             Width = 14, Height = 14, CornerRadius = new CornerRadius(3), VerticalAlignment = VerticalAlignment.Center,
-            Background = item.Check.Target == CheckTarget.Color && ColorMatch.TryParse(item.Check.Color, out byte r, out byte g, out byte b)
+            Background = check.Target == CheckTarget.Color && ColorMatch.TryParse(check.Color, out byte r, out byte g, out byte b)
                 ? new SolidColorBrush(Color.FromRgb(r, g, b))
                 : Muted
         };
-        return Row(not, swatch, text, edit, remove);
+        return Row(NotBox(item, "True when this check finds nothing, and false when it finds its target."), swatch, text, edit, remove);
     }
 
     async Task AddCheckAsync(Condition group)
@@ -270,7 +343,9 @@ sealed class ConditionWindow : Window
         {
             var check = await CheckStepWindow.EditAsync(this, backend, null);
             if (check == null) return;
-            group.Items.Add(Condition.Of(check));
+            var item = Condition.Of(check);
+            if (group.Items.Count > 0) item.Link = LogicJoin.And;
+            group.Items.Add(item);
             Rebuild();
         }
         finally { editingCheck = false; }
@@ -288,12 +363,16 @@ sealed class ConditionWindow : Window
 
     void Accept()
     {
+        if (!root.Checks().Any()) { ShowProblem("Add at least one screen check first."); return; }
         if (root.Problem() is { } trouble) { ShowProblem(trouble); return; }
-        Close(new Result(root.Clone(), (int)(interval.Value ?? 0), (int)Math.Round((limit.Value ?? 0) * 1000)));
+        var condition = root.Clone();
+        condition.FixLinks();
+        Close(new Result(condition, (int)(interval.Value ?? 0), (int)Math.Round((limit.Value ?? 0) * 1000)));
     }
 
     async Task TestAsync()
     {
+        if (!root.Checks().Any()) { ShowProblem("Add at least one screen check first."); return; }
         if (root.Problem() is { } trouble) { ShowProblem(trouble); return; }
         ShowProblem(null);
         testResult.Text = "Looking…";

@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.1.0 (November 21, 2026)
+
+- Fixed: a macro waiting in a While loop (or a long Wait) no longer sets off lag protection. While a macro only waits, looks at the screen or is paused, it sends nothing, so that time isn't judged as lag, and a slow-down only stretches the time a pass spends clicking and typing.
+- In the condition window, each screen check has its own "and" / "or" switch with the check above it. "and" goes first, as usual, and the preview shows the brackets. Groups are still there for the rare condition that needs them. Conditions from 3.0 keep their meaning.
+- Adding an If, Else if or While no longer opens a screen check by itself; press "+ Screen check…" when you're ready. A condition can't be saved without at least one check.
+- Clicks and drags can aim at a screen check: they click where it finds its target, at its exact center, the center moved by pixels, or the center moved by a share of its size (100% is the right or top edge, -100% the left or bottom edge). If it finds nothing, the line is skipped, and the app suggests putting such lines inside an If or While.
+- Undo and Redo in the Macro tab, also as Ctrl+Z and Ctrl+Y, for every change to the lines.
+- After deleting a line, the line above it is selected.
+- Double-click any line to load it into the editor, not just For and Go to.
+- New option "Start delay": how long Start waits before the first click or key, 0 to 60 seconds (3 by default).
+- Pause and Resume: a new button, and key bindings can now pause or resume the window's run, step one line of a paused macro, or make the macro go to a line (starting it from there if it isn't running). New option "Resume delay" sets how long Resume waits before carrying on (0 by default). Pausing holds Waits and loop time limits too.
+- Every control explains itself when you hover over it.
+
 ## v3.0.0 (November 20, 2026)
 
 - Macros get control flow: If / Else if / Else, While and For blocks, plus Go to line and Stop macro. Lines inside a block are indented, and blocks can go inside each other.

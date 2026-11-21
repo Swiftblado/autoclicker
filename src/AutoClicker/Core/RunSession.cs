@@ -26,7 +26,11 @@ public sealed class RunSession
     /// <summary>Raised on the monitor thread whenever lag protection changes speed.</summary>
     public event Action<RunSession, LagChange>? LagChanged;
 
+    /// <summary>Pause, step and go-to-line for this run.</summary>
+    public RunControl Control { get; } = new();
+
     public bool IsRunning => runner.IsRunning;
+    public bool IsPaused => IsRunning && Control.IsPaused;
     public long Count => runner.Count;
     public double Multiplier => governor.Multiplier;
     public string LagReason => governor.Reason;
@@ -47,12 +51,16 @@ public sealed class RunSession
     public void WatchAhead() => monitor.Start();
 
     /// <param name="minDelay">Hold the first action back at least this long.</param>
-    public void Start(RunSetup setup, TimeSpan minDelay = default)
+    /// <param name="startLine">For a macro: the line (from 0) its first pass starts at.</param>
+    public void Start(RunSetup setup, TimeSpan minDelay = default, int startLine = 0)
     {
         Stop();
         Setup = setup;
+        Control.Reset();
+        if (startLine > 0) Control.JumpTo(startLine);
         // With the lag check on, every send is timed: a slow one is a sign of lag.
-        var action = setup.Build(setup.LagCheck ? new TimedInputBackend(backend, governor.ReportSend) : backend);
+        var action = setup.Build(setup.LagCheck ? new TimedInputBackend(backend, governor.ReportSend) : backend,
+            Control, setup.LagCheck ? governor : null);
         Macro = action as MacroAction;
         Slowed = false;
 
@@ -68,13 +76,14 @@ public sealed class RunSession
         if (delay < minDelay) delay = minDelay;
 
         activity = RunActivity.Begin();
-        runner.Start(action, setup.IntervalMs, setup.JitterMs, setup.Repeat, setup.LagCheck ? governor : null, delay);
+        runner.Start(action, setup.IntervalMs, setup.JitterMs, setup.Repeat, setup.LagCheck ? governor : null, delay, Control);
     }
 
     /// <summary>Stops the run, or tidies up after one that finished its repeat count. Safe to call twice.</summary>
     public void Stop()
     {
         runner.Stop();
+        Control.Reset();
         monitor.Stop();
         activity?.Dispose();
         activity = null;

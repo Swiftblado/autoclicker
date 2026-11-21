@@ -43,9 +43,17 @@ public static class ColorMatch
         Math.Abs(bgra[offset] - b) <= tolerance;
 }
 
+
 /// <summary>
-/// Does the looking for a <see cref="StepKind.Check"/> step: grabs the part of the screen it
-/// watches and searches it. Used by a running macro and by the editor's Test button.
+/// Where a check found its target. <see cref="At"/> is the spot it has always reported (the found
+/// pixel, the pattern's first point, or the middle of the image); <see cref="Box"/> is the whole
+/// thing found, in screen coordinates.
+/// </summary>
+public readonly record struct Found(PixelPoint At, PixelRect Box);
+
+/// <summary>
+/// Does the looking for a screen check: grabs the part of the screen it watches and searches it.
+/// Used by a running macro and by the editors' Test buttons.
 /// </summary>
 public static class ScreenCheck
 {
@@ -59,11 +67,13 @@ public static class ScreenCheck
     const int ProbeCount = 12;
 
     /// <summary>
-    /// Where the step's target is on screen right now (the found pixel, the pattern's first point,
-    /// or the middle of the image), or null if it isn't there. <paramref name="template"/> is the
-    /// decoded image for image checks.
+    /// Whether the check's target is on screen right now, and where; null if it isn't there.
+    /// <paramref name="template"/> is the decoded image for image checks. With
+    /// <paramref name="measure"/>, a single color's <see cref="Found.Box"/> is the whole patch of
+    /// that color around the spot found (slower, so only done when a click needs it); otherwise
+    /// it's just the one pixel.
     /// </summary>
-    public static PixelPoint? Find(MacroStep step, ImageTemplate? template)
+    public static Found? Find(MacroStep step, ImageTemplate? template, bool measure = false)
     {
         int tolerance = Math.Clamp(step.Tolerance, 0, 255);
         switch (step.Target)
@@ -71,9 +81,19 @@ public static class ScreenCheck
             case CheckTarget.Color:
             {
                 if (!ColorMatch.TryParse(step.Color, out byte r, out byte g, out byte b)) return null;
+                if (step.Where == CheckArea.Point && measure)
+                {
+                    // The patch can spread well past the point, so look at the whole screen around it.
+                    var screen = ScreenCapture.Grab(ScreenCapture.ScreenBounds);
+                    if (screen == null) return null;
+                    int x = (int)((step.FromX - screen.Area.X) * screen.Scale), y = (int)((step.FromY - screen.Area.Y) * screen.Scale);
+                    if (x < 0 || y < 0 || x >= screen.Width || y >= screen.Height) return null;
+                    if (!ColorMatch.Near(screen.Bgra, (y * screen.Width + x) * 4, r, g, b, tolerance)) return null;
+                    return new Found(step.From, Patch(screen, x, y, r, g, b, tolerance));
+                }
                 var area = step.Where == CheckArea.Point ? new PixelRect(step.FromX, step.FromY, 1, 1) : SearchArea(step);
                 var image = ScreenCapture.Grab(area);
-                return image == null ? null : FindColor(image, r, g, b, tolerance);
+                return image == null ? null : FindColor(image, r, g, b, tolerance, measure);
             }
 
             case CheckTarget.Colors:
@@ -91,25 +111,104 @@ public static class ScreenCheck
         }
     }
 
+    /// <summary>
+    /// Where a click aimed by <paramref name="check"/> goes right now: the spot of what it finds,
+    /// chosen by the check's <see cref="MacroStep.Spot"/>. Null when it finds nothing.
+    /// </summary>
+    public static PixelPoint? Aim(MacroStep check, ImageTemplate? template) =>
+        Find(check, template, measure: true) is { } found ? SpotIn(check, found.Box) : null;
+
+    /// <summary>
+    /// The spot <paramref name="check"/> picks in <paramref name="box"/>: its middle, or the middle
+    /// moved by pixels (+ is right and up) or by a share of the box (100% = right or top edge).
+    /// </summary>
+    public static PixelPoint SpotIn(MacroStep check, PixelRect box)
+    {
+        double left = box.X, top = box.Y;
+        double right = box.X + Math.Max(1, box.Width) - 1, bottom = box.Y + Math.Max(1, box.Height) - 1;
+        double cx = (left + right) / 2, cy = (top + bottom) / 2;
+        double x = cx, y = cy;
+        switch (check.Spot)
+        {
+            case CheckSpot.OffsetPixels:
+                x = cx + check.OffsetX;
+                y = cy - check.OffsetY;   // + is up, and screen Y grows downwards
+                break;
+            case CheckSpot.OffsetPercent:
+                x = cx + check.OffsetX / 100.0 * (right - cx);
+                y = cy - check.OffsetY / 100.0 * (cy - top);
+                break;
+        }
+        return new PixelPoint((int)Math.Round(x, MidpointRounding.AwayFromZero), (int)Math.Round(y, MidpointRounding.AwayFromZero));
+    }
+
     static PixelRect SearchArea(MacroStep step) =>
         step.Where == CheckArea.Screen || step.AreaWidth <= 0 || step.AreaHeight <= 0
             ? ScreenCapture.ScreenBounds
             : step.Area;
 
-    static PixelPoint? FindColor(ScreenImage image, byte r, byte g, byte b, int tolerance)
+    /// <summary>A box from image pixel (left, top) to (right, bottom), both included, in screen coordinates.</summary>
+    static PixelRect ScreenBox(ScreenImage image, int left, int top, int right, int bottom)
+    {
+        var a = image.ToScreen(left, top);
+        var b = image.ToScreen(right, bottom);
+        return new PixelRect(a.X, a.Y, b.X - a.X + 1, b.Y - a.Y + 1);
+    }
+
+    static Found? FindColor(ScreenImage image, byte r, byte g, byte b, int tolerance, bool measure)
     {
         var bgra = image.Bgra;
         for (int i = 0; i < bgra.Length; i += 4)
         {
             if (!ColorMatch.Near(bgra, i, r, g, b, tolerance)) continue;
             int pixel = i / 4;
-            return image.ToScreen(pixel % image.Width, pixel / image.Width);
+            int x = pixel % image.Width, y = pixel / image.Width;
+            return new Found(image.ToScreen(x, y), measure ? Patch(image, x, y, r, g, b, tolerance) : ScreenBox(image, x, y, x, y));
         }
         return null;
     }
 
-    /// <summary>Every point must show its own color, where it is. Found means at the first point.</summary>
-    static PixelPoint? CheckFixedPoints(List<ColorPoint> points, int tolerance)
+    /// <summary>
+    /// The box around the patch of the color touching image pixel (x, y): every pixel within
+    /// tolerance of it that can be reached by stepping left, right, up or down.
+    /// </summary>
+    static PixelRect Patch(ScreenImage image, int x, int y, byte r, byte g, byte b, int tolerance)
+    {
+        int width = image.Width, height = image.Height;
+        var bgra = image.Bgra;
+        var seen = new bool[width * height];
+        var pending = new Stack<int>();
+        pending.Push(y * width + x);
+        seen[y * width + x] = true;
+        int minX = x, maxX = x, minY = y, maxY = y;
+
+        void Visit(int px, int py)
+        {
+            if (px < 0 || py < 0 || px >= width || py >= height) return;
+            int index = py * width + px;
+            if (seen[index]) return;
+            seen[index] = true;
+            if (ColorMatch.Near(bgra, index * 4, r, g, b, tolerance)) pending.Push(index);
+        }
+
+        while (pending.Count > 0)
+        {
+            int index = pending.Pop();
+            int px = index % width, py = index / width;
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
+            Visit(px - 1, py);
+            Visit(px + 1, py);
+            Visit(px, py - 1);
+            Visit(px, py + 1);
+        }
+        return ScreenBox(image, minX, minY, maxX, maxY);
+    }
+
+    /// <summary>Every point must show its own color, where it is. Found at the first point; the box spans them all.</summary>
+    static Found? CheckFixedPoints(List<ColorPoint> points, int tolerance)
     {
         // Grab them all in one go when they're close, so they're all read from the same frame.
         int left = int.MaxValue, top = int.MaxValue, right = int.MinValue, bottom = int.MinValue;
@@ -130,14 +229,14 @@ public static class ScreenCheck
             if (x < 0 || y < 0 || x >= image.Width || y >= image.Height) return null;
             if (!ColorMatch.Near(image.Bgra, (y * image.Width + x) * 4, r, g, b, tolerance)) return null;
         }
-        return new PixelPoint(points[0].X, points[0].Y);
+        return new Found(new PixelPoint(points[0].X, points[0].Y), new PixelRect(left, top, right - left + 1, bottom - top + 1));
     }
 
     /// <summary>
     /// The points as a shape: their spacing kept, searched for anywhere in <paramref name="area"/>.
-    /// Found means where the first point lands.
+    /// Found where the first point lands; the box spans the whole shape.
     /// </summary>
-    static PixelPoint? FindPattern(List<ColorPoint> points, PixelRect area, int tolerance)
+    static Found? FindPattern(List<ColorPoint> points, PixelRect area, int tolerance)
     {
         var image = ScreenCapture.Grab(area);
         if (image == null) return null;
@@ -163,7 +262,7 @@ public static class ScreenCheck
         {
             int i = 0;
             while (i < n && ColorMatch.Near(bgra, ((y + dy[i]) * width + x + dx[i]) * 4, r[i], g[i], b[i], tolerance)) i++;
-            if (i == n) return image.ToScreen(x, y);
+            if (i == n) return new Found(image.ToScreen(x, y), ScreenBox(image, x + minX, y + minY, x + maxX, y + maxY));
         }
         return null;
     }
@@ -173,7 +272,7 @@ public static class ScreenCheck
     /// left to right) where nearly all its pixels match. A few spread-out pixels are tried first at
     /// each place, which throws out almost every wrong place after two or three comparisons.
     /// </summary>
-    static PixelPoint? FindImage(ScreenImage image, ImageTemplate template, int tolerance)
+    static Found? FindImage(ScreenImage image, ImageTemplate template, int tolerance)
     {
         int tw = template.Width, th = template.Height;
         if (tw > image.Width || th > image.Height) return null;
@@ -244,6 +343,7 @@ public static class ScreenCheck
 
         if (best == long.MaxValue) return null;
         int foundTop = (int)(best / columns), foundLeft = (int)(best % columns);
-        return image.ToScreen(foundLeft + tw / 2.0, foundTop + th / 2.0);
+        return new Found(image.ToScreen(foundLeft + tw / 2.0, foundTop + th / 2.0),
+            ScreenBox(image, foundLeft, foundTop, foundLeft + tw - 1, foundTop + th - 1));
     }
 }

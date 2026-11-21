@@ -26,14 +26,14 @@ public sealed class Runner
     /// holds the first action back, e.g. while the lag monitor learns what the target normally looks like.
     /// </summary>
     public void Start(IInputAction action, double intervalMs, int jitterMs, long repeat, LagGovernor? lag = null,
-        TimeSpan startDelay = default)
+        TimeSpan startDelay = default, RunControl? control = null)
     {
         Stop();
         stopRequested = false;
         cancellation = new CancellationTokenSource();
         var cancel = cancellation.Token;
         Interlocked.Exchange(ref count, 0);
-        thread = new Thread(() => Loop(action, intervalMs, jitterMs, repeat, lag, startDelay, cancel))
+        thread = new Thread(() => Loop(action, intervalMs, jitterMs, repeat, lag, startDelay, control, cancel))
         {
             IsBackground = true,
             Priority = ThreadPriority.AboveNormal,
@@ -53,7 +53,7 @@ public sealed class Runner
     }
 
     void Loop(IInputAction action, double intervalMs, int jitterMs, long repeat, LagGovernor? lag,
-        TimeSpan startDelay, CancellationToken cancel)
+        TimeSpan startDelay, RunControl? control, CancellationToken cancel)
     {
         RunActivity.KeepTimersPrecise();
         // Windows' default timer resolution is ~15 ms, too coarse for short intervals.
@@ -68,17 +68,27 @@ public sealed class Runner
 
             while (!stopRequested)
             {
+                // A macro holds itself between lines; anything else is held here, between actions.
+                if (control != null && action is not MacroAction)
+                {
+                    if (lag != null) lag.Quiet = true;
+                    control.TakeJump();   // only macros have lines to go to
+                    bool go = control.BeforeLine(cancel);
+                    if (lag != null) lag.Quiet = false;
+                    if (!go) continue;
+                }
                 double started = clock.Elapsed.TotalMilliseconds;
                 action.Perform(cancel);
                 if (stopRequested) break;
                 long done = Interlocked.Increment(ref count);
                 if (repeat > 0 && done >= repeat) break;
-                if (action is MacroAction { EndRun: true }) break;   // a check step said stop
+                if (action is MacroAction { EndRun: true }) break;   // a Stop line ran
 
                 double delay = intervalMs;
                 if (jitterMs > 0) delay += rng.Next(-jitterMs, jitterMs + 1);
                 if (delay < 1) delay = 1;
-                double performMs = clock.Elapsed.TotalMilliseconds - started;
+                // A macro says how long it spent sending input; its waits, checks and pauses don't count.
+                double performMs = action is MacroAction macro ? macro.ActiveMs : clock.Elapsed.TotalMilliseconds - started;
 
                 // Slowed for lag: stretch the whole cycle, not just the gap after it. With a
                 // short interval and a long action (a held click, a macro) the gap is a sliver,

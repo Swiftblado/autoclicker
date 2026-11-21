@@ -10,7 +10,8 @@ namespace AutoClicker.Core;
 public sealed class Macro
 {
     /// <summary>Bumped when the on-disk shape changes; <see cref="Load"/> rejects a file newer than this.</summary>
-    const int CurrentVersion = 2;
+    // Version 3 (3.1) added checks that aim clicks, and a separate "and"/"or" for each condition item.
+    const int CurrentVersion = 3;
 
     static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -108,6 +109,11 @@ public sealed class Macro
                 case StepKind.If or StepKind.ElseIf or StepKind.While:
                     if (step.Condition == null) return which + "has no condition. Double-click it to set one.";
                     if (step.Condition.Problem() is { } trouble) return "Line " + (i + 1) + ": " + trouble;
+                    break;
+                case StepKind.Click or StepKind.Drag:
+                    foreach (var aim in step.AimChecks)
+                        if (aim.CheckProblem() is { } missing)
+                            return which + "aims at a screen check (" + aim.DescribeLook() + ") that " + missing;
                     break;
                 case StepKind.GoTo when step.Line < 1 || step.Line > steps.Count:
                     return which + "goes to a line that doesn't exist.";

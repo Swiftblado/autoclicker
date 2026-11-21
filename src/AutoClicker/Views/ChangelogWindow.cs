@@ -33,6 +33,7 @@ static class ChangelogWindow
         }
 
         var close = new Button { Content = "Close", MinWidth = 90, HorizontalContentAlignment = HorizontalAlignment.Center, IsDefault = true, IsCancel = true };
+        ToolTip.SetTip(close, "Closes this list (Enter or Esc).");
         var dialog = new Window
         {
             Title = "What's new in Auto Clicker",

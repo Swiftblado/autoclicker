@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using AutoClicker.Input;
 using Avalonia;
@@ -14,17 +15,23 @@ public sealed class MacroAction : IInputAction
 
     readonly IInputBackend backend;
     readonly List<MacroStep> steps;
+    readonly RunControl control;
+    readonly LagGovernor? lag;
     int currentStepIndex = -1;
 
     /// <summary>
-    /// Index of the step currently executing, or -1 between steps / when not running.
-    /// Written by the run thread, read by the UI thread to highlight the running step.
+    /// Index of the step currently executing (or held before, while paused), or -1 between passes
+    /// and when not running. Written by the run thread, read by the UI thread.
     /// </summary>
     public int CurrentStepIndex => Volatile.Read(ref currentStepIndex);
 
-    public MacroAction(IInputBackend backend, Macro macro)
+    /// <param name="control">Pause, step and go-to-line from outside; a fresh one when not given.</param>
+    /// <param name="lag">Told when the macro is only waiting or looking, so lag protection doesn't judge those times.</param>
+    public MacroAction(IInputBackend backend, Macro macro, RunControl? control = null, LagGovernor? lag = null)
     {
         this.backend = backend;
+        this.control = control ?? new RunControl();
+        this.lag = lag;
         // Snapshot so edits made in the UI while this runs can't mutate what's executing.
         steps = new List<MacroStep>(macro.Steps);
         blocks = MacroBlocks.Analyze(steps);
@@ -38,21 +45,34 @@ public sealed class MacroAction : IInputAction
     /// <summary>Set when a Stop line ran: the runner ends the run after this pass.</summary>
     public bool EndRun { get; private set; }
 
+    /// <summary>
+    /// How long the last pass spent clicking, dragging and pressing keys, in ms; waits, checks and
+    /// pauses left out. Lag protection stretches the gap after a pass by this, not by the whole pass.
+    /// </summary>
+    public double ActiveMs { get; private set; }
+
     /// <summary>A While or For that's going round: where it starts and how far it's got.</summary>
-    sealed class Loop(int start)
+    sealed class Loop(int start, double now)
     {
         public int Start { get; } = start;
-        public System.Diagnostics.Stopwatch Clock { get; } = System.Diagnostics.Stopwatch.StartNew();
+        /// <summary>Times below are on <see cref="MacroAction.Now"/>, which leaves out time spent paused.</summary>
+        public double StartMs { get; } = now;
         public int Rounds { get; set; }
-        /// <summary>Clock time of the last look at a While's condition, in ms.</summary>
-        public long LastCheckMs { get; set; }
-        /// <summary>Clock time when the current round began, in ms.</summary>
-        public long RoundStartMs { get; set; }
+        /// <summary>When a While last looked at its condition.</summary>
+        public double LastCheckMs { get; set; } = now;
+        /// <summary>When the current round began.</summary>
+        public double RoundStartMs { get; set; } = now;
     }
+
+    readonly Stopwatch clock = Stopwatch.StartNew();
+
+    /// <summary>Running time in ms, not counting time held by pause.</summary>
+    double Now => clock.Elapsed.TotalMilliseconds - control.HeldMs;
 
     public void Perform(CancellationToken cancel)
     {
         EndRun = false;
+        ActiveMs = 0;
         // Badly nested blocks can't run; the editor won't start such a macro, but a key binding
         // saved elsewhere might hold one.
         if (blocks.Problem != null) return;
@@ -65,6 +85,13 @@ public sealed class MacroAction : IInputAction
             {
                 if (cancel.IsCancellationRequested) return;
                 Volatile.Write(ref currentStepIndex, i);
+                Quiet(true);
+                if (!control.BeforeLine(cancel))
+                {
+                    if (cancel.IsCancellationRequested) return;
+                    if (control.TakeJump() is { } jumpTo) i = Jump(loops, jumpTo);
+                    continue;
+                }
                 var step = steps[i];
 
                 switch (step.Kind)
@@ -81,9 +108,10 @@ public sealed class MacroAction : IInputAction
                     case StepKind.While:
                     {
                         Drop(loops, i);
-                        var loop = new Loop(i);
+                        var loop = new Loop(i, Now);
                         bool holds = Holds(step, cancel);
                         if (cancel.IsCancellationRequested) return;
+                        loop.LastCheckMs = Now;
                         if (holds)
                         {
                             loops.Add(loop);
@@ -97,19 +125,19 @@ public sealed class MacroAction : IInputAction
                     {
                         int start = blocks.Open[i];
                         var opener = steps[start];
-                        var loop = Find(loops, start);
-                        if (loop.Clock.ElapsedMilliseconds >= opener.LimitMs && opener.LimitMs > 0)
+                        var loop = Find(loops, start, Now);
+                        double Ran() => Now - loop.StartMs;
+                        if (opener.LimitMs > 0 && Ran() >= opener.LimitMs)
                         {
                             loops.Remove(loop);
                             i++;
                             continue;
                         }
                         // Look again no sooner than the loop's interval after the last look.
-                        long rest = opener.IntervalMs - (loop.Clock.ElapsedMilliseconds - loop.LastCheckMs);
-                        if (opener.LimitMs > 0) rest = Math.Min(rest, opener.LimitMs - loop.Clock.ElapsedMilliseconds);
-                        if (rest > 0) Wait.For((int)rest, cancel);
-                        if (cancel.IsCancellationRequested) return;
-                        if (opener.LimitMs > 0 && loop.Clock.ElapsedMilliseconds >= opener.LimitMs)
+                        double rest = opener.IntervalMs - (Now - loop.LastCheckMs);
+                        if (opener.LimitMs > 0) rest = Math.Min(rest, opener.LimitMs - Ran());
+                        if (rest >= 1 && !control.Sleep((int)Math.Ceiling(rest), cancel)) continue;   // cut short: see the top
+                        if (opener.LimitMs > 0 && Ran() >= opener.LimitMs)
                         {
                             loops.Remove(loop);
                             i++;
@@ -118,7 +146,7 @@ public sealed class MacroAction : IInputAction
 
                         Volatile.Write(ref currentStepIndex, start);
                         bool holds = Holds(opener, cancel);
-                        loop.LastCheckMs = loop.Clock.ElapsedMilliseconds;
+                        loop.LastCheckMs = Now;
                         if (cancel.IsCancellationRequested) return;
                         if (holds) i = start + 1;
                         else
@@ -138,7 +166,7 @@ public sealed class MacroAction : IInputAction
                             i = blocks.End[i] + 1;
                             continue;
                         }
-                        loops.Add(new Loop(i));
+                        loops.Add(new Loop(i, Now));
                         i++;
                         continue;
                     }
@@ -147,11 +175,11 @@ public sealed class MacroAction : IInputAction
                     {
                         int start = blocks.Open[i];
                         var opener = steps[start];
-                        var loop = Find(loops, start);
+                        var loop = Find(loops, start, Now);
                         loop.Rounds++;
                         // Time is only looked at between rounds, so a round is never cut off halfway.
                         bool done = opener.ForSeconds
-                            ? loop.Clock.ElapsedMilliseconds >= opener.DurationMs
+                            ? Now - loop.StartMs >= opener.DurationMs
                             : loop.Rounds >= opener.Count;
                         if (done)
                         {
@@ -160,8 +188,8 @@ public sealed class MacroAction : IInputAction
                             continue;
                         }
                         // A timed loop whose round takes no time at all would spin flat out.
-                        if (opener.ForSeconds && loop.Clock.ElapsedMilliseconds - loop.RoundStartMs < 1) Wait.For(1, cancel);
-                        loop.RoundStartMs = loop.Clock.ElapsedMilliseconds;
+                        if (opener.ForSeconds && Now - loop.RoundStartMs < 1 && !control.Sleep(1, cancel)) continue;
+                        loop.RoundStartMs = Now;
                         i = start + 1;
                         continue;
                     }
@@ -169,11 +197,9 @@ public sealed class MacroAction : IInputAction
                     case StepKind.GoTo:
                     {
                         int target = Math.Clamp(step.Line, 1, steps.Count) - 1;
-                        // Leaving a loop ends it; loops the target is inside keep going.
-                        loops.RemoveAll(loop => target < loop.Start || target > blocks.End[loop.Start]);
                         // A loop made of jumps could otherwise spin flat out; 1 ms costs nothing next to a step.
-                        if (target <= i) Wait.For(1, cancel);
-                        i = target;
+                        if (target <= i && !control.Sleep(1, cancel)) continue;
+                        i = Jump(loops, target);
                         continue;
                     }
 
@@ -185,14 +211,14 @@ public sealed class MacroAction : IInputAction
                     case StepKind.EndIf or StepKind.Check:
                         break;
 
-                    // Waits leave the mouse and keyboard free for another run; every other step
-                    // finishes before another run's gesture starts.
+                    // Waits leave the mouse and keyboard free for another run, and can be paused
+                    // or cut short by a go-to-line.
                     case StepKind.Wait:
-                        RunStep(step, cancel);
+                        if (!control.Sleep(step.DurationMs, cancel)) continue;
                         break;
 
                     default:
-                        lock (InputGate.Lock) RunStep(step, cancel);
+                        RunInput(step, cancel);
                         break;
                 }
                 i++;
@@ -200,8 +226,25 @@ public sealed class MacroAction : IInputAction
         }
         finally
         {
+            Quiet(false);
             Volatile.Write(ref currentStepIndex, -1);
         }
+    }
+
+    void Quiet(bool quiet)
+    {
+        if (lag != null) lag.Quiet = quiet;
+    }
+
+    /// <summary>
+    /// Carries on from line <paramref name="target"/> (from 0). Leaving a loop ends it; loops the
+    /// target is inside keep going. Returns the target.
+    /// </summary>
+    int Jump(List<Loop> loops, int target)
+    {
+        target = Math.Clamp(target, 0, Math.Max(0, steps.Count - 1));
+        loops.RemoveAll(loop => target < loop.Start || target > blocks.End[loop.Start]);
+        return target;
     }
 
     /// <summary>
@@ -229,18 +272,20 @@ public sealed class MacroAction : IInputAction
         }
     }
 
+    ImageTemplate? TemplateOf(MacroStep check)
+    {
+        if (!templates.TryGetValue(check, out var template))
+            templates[check] = template = check.Target == CheckTarget.Image ? ImageTemplate.FromBase64(check.ImagePng) : null;
+        return template;
+    }
+
     /// <summary>Whether a line's condition is true on screen right now.</summary>
     bool Holds(MacroStep step, CancellationToken cancel) =>
         step.Condition != null && step.Condition.Evaluate(check =>
-        {
-            if (cancel.IsCancellationRequested) return false;
-            if (!templates.TryGetValue(check, out var template))
-                templates[check] = template = check.Target == CheckTarget.Image ? ImageTemplate.FromBase64(check.ImagePng) : null;
-            return ScreenCheck.Find(check, template) != null;
-        });
+            !cancel.IsCancellationRequested && ScreenCheck.Find(check, TemplateOf(check)) != null);
 
     /// <summary>The running loop that starts at <paramref name="start"/>. One jumped into from outside starts now.</summary>
-    static Loop Find(List<Loop> loops, int start)
+    static Loop Find(List<Loop> loops, int start, double now)
     {
         int at = loops.FindLastIndex(loop => loop.Start == start);
         if (at >= 0)
@@ -249,7 +294,7 @@ public sealed class MacroAction : IInputAction
             loops.RemoveRange(at + 1, loops.Count - at - 1);
             return loops[at];
         }
-        var fresh = new Loop(start);
+        var fresh = new Loop(start, now);
         loops.Add(fresh);
         return fresh;
     }
@@ -257,45 +302,75 @@ public sealed class MacroAction : IInputAction
     /// <summary>Forgets the loop starting at <paramref name="start"/>, so reaching its first line again starts it over.</summary>
     static void Drop(List<Loop> loops, int start) => loops.RemoveAll(loop => loop.Start == start);
 
-    void RunStep(MacroStep step, CancellationToken cancel)
+    /// <summary>
+    /// A click, drag, move or key press. Any screen check aiming it looks first, outside the input
+    /// lock; if it finds nothing the line is skipped. Then the gesture runs whole, before another
+    /// run's gesture can start.
+    /// </summary>
+    void RunInput(MacroStep step, CancellationToken cancel)
     {
-        switch (step.Kind)
+        var from = step.From;
+        var to = step.To;
+        if (step.Kind is StepKind.Click or StepKind.Drag)
         {
-            case StepKind.Wait:
-                Wait.For(step.DurationMs, cancel);
-                break;
+            if (step.FromCheck != null)
+            {
+                if (ScreenCheck.Aim(step.FromCheck, TemplateOf(step.FromCheck)) is not { } aimed) return;
+                from = aimed;
+            }
+            if (step.Kind == StepKind.Drag && step.ToCheck != null)
+            {
+                if (ScreenCheck.Aim(step.ToCheck, TemplateOf(step.ToCheck)) is not { } aimed) return;
+                to = aimed;
+            }
+        }
+        if (cancel.IsCancellationRequested) return;
 
-            case StepKind.Move:
-                backend.SetCursorPosition(step.To);
-                break;
+        Quiet(false);
+        long started = Stopwatch.GetTimestamp();
+        try
+        {
+            lock (InputGate.Lock)
+            {
+                switch (step.Kind)
+                {
+                    case StepKind.Move:
+                        backend.SetCursorPosition(to);
+                        break;
 
-            case StepKind.Click:
-                if (!step.AtCursor) backend.SetCursorPosition(step.From);
-                backend.SendClick(step.Button, Math.Max(1, step.ClickCount), Math.Max(0, step.HoldMs));
-                break;
+                    case StepKind.Click:
+                        if (!step.AtCursor || step.FromCheck != null) backend.SetCursorPosition(from);
+                        backend.SendClick(step.Button, Math.Max(1, step.ClickCount), Math.Max(0, step.HoldMs));
+                        break;
 
-            case StepKind.Drag:
-                RunDrag(step, cancel);
-                break;
+                    case StepKind.Drag:
+                        RunDrag(step.Button, from, to, step.DurationMs, cancel);
+                        break;
 
-            case StepKind.Key:
-                RunKey(step, cancel);
-                break;
+                    case StepKind.Key:
+                        RunKey(step, cancel);
+                        break;
+                }
+            }
+        }
+        finally
+        {
+            ActiveMs += Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         }
     }
 
-    void RunDrag(MacroStep step, CancellationToken cancel)
+    void RunDrag(ClickButton button, PixelPoint from, PixelPoint to, int durationMs, CancellationToken cancel)
     {
-        backend.SetCursorPosition(step.From);
-        backend.SendMouseButton(step.Button, true);
+        backend.SetCursorPosition(from);
+        backend.SendMouseButton(button, true);
         try
         {
-            DragAction.Glide(backend, step.From, step.To, step.DurationMs, cancel);
+            DragAction.Glide(backend, from, to, durationMs, cancel);
         }
         finally
         {
             // Always let go, even when stopped mid-drag, or the button stays stuck down.
-            backend.SendMouseButton(step.Button, false);
+            backend.SendMouseButton(button, false);
         }
     }
 

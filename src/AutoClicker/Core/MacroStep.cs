@@ -81,6 +81,20 @@ public enum CheckBranch
     Stop
 }
 
+/// <summary>Which spot of what a check found a click or drag goes to.</summary>
+public enum CheckSpot
+{
+    /// <summary>The middle of what was found.</summary>
+    Center,
+    /// <summary>The middle, moved by <see cref="MacroStep.OffsetX"/>, <see cref="MacroStep.OffsetY"/> pixels (+ is right and up).</summary>
+    OffsetPixels,
+    /// <summary>
+    /// The middle, moved by a share of the found thing's size: 100 is its right (X) or top (Y)
+    /// edge, -100 its left or bottom edge.
+    /// </summary>
+    OffsetPercent
+}
+
 /// <summary>One point of a multi-color check: a screen position and the color expected there.</summary>
 public sealed class ColorPoint
 {
@@ -151,6 +165,19 @@ public sealed class MacroStep
     public CheckBranch OnMissing { get; set; } = CheckBranch.Next;
     /// <summary>Step number (counted from 1) to go to when not found.</summary>
     public int MissingStep { get; set; } = 1;
+
+    /// <summary>A check that aims a click or drag: which spot of what it found to use.</summary>
+    public CheckSpot Spot { get; set; } = CheckSpot.Center;
+    /// <summary>With <see cref="CheckSpot.OffsetPixels"/>: pixels, + is right. With <see cref="CheckSpot.OffsetPercent"/>: percent, 100 = right edge.</summary>
+    public int OffsetX { get; set; }
+    /// <summary>With <see cref="CheckSpot.OffsetPixels"/>: pixels, + is up. With <see cref="CheckSpot.OffsetPercent"/>: percent, 100 = top edge.</summary>
+    public int OffsetY { get; set; }
+
+    // Click / Drag aimed by a screen check
+    /// <summary>Click: clicks where this check finds its target. Drag: starts there. Null uses <see cref="From"/>.</summary>
+    public MacroStep? FromCheck { get; set; }
+    /// <summary>Drag: ends where this check finds its target. Null uses <see cref="To"/>.</summary>
+    public MacroStep? ToCheck { get; set; }
 
     // If / Else if / While
     /// <summary>What an If, Else if or While tests: screen checks joined with and / or / not.</summary>
@@ -248,13 +275,15 @@ public sealed class MacroStep
             case StepKind.Click:
                 string what = ClickCount > 1 ? "Double-click" : "Click";
                 if (ClickHold.IsHalf(HoldMs)) what = "Half " + what.ToLowerInvariant();
-                string where = AtCursor ? "at the cursor" : Point(From);
+                string where = FromCheck != null ? "on " + FromCheck.DescribeAim()
+                    : AtCursor ? "at the cursor" : Point(From);
                 string held = HoldMs > 0 ? ", held " + Time(HoldMs) : "";
                 return what + " " + Button.ToString().ToLowerInvariant() + " " + where + held;
 
             case StepKind.Drag:
-                return "Drag " + Button.ToString().ToLowerInvariant() + " " + Point(From) +
-                       " to " + Point(To) + " over " + Time(DurationMs);
+                return "Drag " + Button.ToString().ToLowerInvariant() + " " +
+                       (FromCheck != null ? "from " + FromCheck.DescribeAim() : Point(From)) +
+                       " to " + (ToCheck != null ? ToCheck.DescribeAim() : Point(To)) + " over " + Time(DurationMs);
 
             case StepKind.Move:
                 return "Move cursor to " + Point(To);
@@ -324,6 +353,23 @@ public sealed class MacroStep
         return what + where;
     }
 
+    /// <summary>For a check that aims a click: what it finds and which spot, e.g. "#FF0000 in (0, 0) 200×200 (center +10, -5 px)".</summary>
+    public string DescribeAim() => DescribeLook() + " (" + DescribeSpot() + ")";
+
+    /// <summary>"center", "center +10, -5 px" or "center +50% X, -20% Y".</summary>
+    public string DescribeSpot() => Spot switch
+    {
+        CheckSpot.OffsetPixels => "center " + Signed(OffsetX) + ", " + Signed(OffsetY) + " px",
+        CheckSpot.OffsetPercent => "center " + Signed(OffsetX) + "% X, " + Signed(OffsetY) + "% Y",
+        _ => "center"
+    };
+
+    static string Signed(int n) => (n > 0 ? "+" : "") + n.ToString(CultureInfo.CurrentCulture);
+
+    /// <summary>The screen checks that aim this click or drag, if any.</summary>
+    [JsonIgnore] public IEnumerable<MacroStep> AimChecks =>
+        new[] { FromCheck, Kind == StepKind.Drag ? ToCheck : null }.OfType<MacroStep>();
+
     /// <summary>What's missing from a screen check, in words for the user; null when it's complete.</summary>
     public string? CheckProblem() => Target switch
     {
@@ -356,6 +402,8 @@ public sealed class MacroStep
         var clone = (MacroStep)MemberwiseClone();
         clone.Points = Points.Select(point => point.Clone()).ToList();
         clone.Condition = Condition?.Clone();
+        clone.FromCheck = FromCheck?.Clone();
+        clone.ToCheck = ToCheck?.Clone();
         return clone;
     }
 }

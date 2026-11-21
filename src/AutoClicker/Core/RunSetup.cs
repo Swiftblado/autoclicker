@@ -62,13 +62,15 @@ public sealed class RunSetup
     }
 
     /// <param name="target">Where the action sends its input: the backend itself, or a wrapper round it.</param>
-    public IInputAction Build(IInputBackend target) => Mode switch
+    /// <param name="control">For a macro: pause, step and go-to-line from outside.</param>
+    /// <param name="lag">For a macro: told when it only waits or looks, so that isn't judged as lag.</param>
+    public IInputAction Build(IInputBackend target, RunControl? control = null, LagGovernor? lag = null) => Mode switch
     {
         AutomationMode.Clicks => new MouseClickAction(target, Button, ClickCount, HoldMs, FixedPosition, new PixelPoint(X, Y)),
         AutomationMode.Drags => new DragAction(target, DragButton, new PixelPoint(DragFromX, DragFromY),
             new PixelPoint(DragToX, DragToY), DragDurationMs),
         AutomationMode.Keys => new KeyPressAction(target, Key, Modifiers, KeyHoldMs),
-        _ => new MacroAction(target, new Macro { Steps = Steps })
+        _ => new MacroAction(target, new Macro { Steps = Steps }, control, lag)
     };
 
     /// <summary>"click", "drag", "key press" or "pass", for counting what a run has done.</summary>

@@ -33,7 +33,10 @@ public partial class MainWindow : Window
         public bool WasRunning { get; set; }
     }
 
-    const int StartCountdownSeconds = 3;
+    const int DefaultStartDelaySeconds = 3;
+
+    /// <summary>How many changes to the macro's lines Undo can take back.</summary>
+    const int UndoLimit = 100;
 
     /// <summary>
     /// A binding with modifiers starts this much later, so the Ctrl or Shift still held from pressing
@@ -75,6 +78,16 @@ public partial class MainWindow : Window
     readonly ObservableCollection<string> libraryRows = [];
     readonly List<RecordedEvent> recordedEvents = [];
     readonly object recordLock = new();
+
+    /// <summary>The macro's lines as they were before a change, for Undo and Redo.</summary>
+    sealed record MacroSnapshot(List<MacroStep> Steps, string? Name, int Selected, string What);
+    readonly List<MacroSnapshot> undoStack = [];
+    readonly List<MacroSnapshot> redoStack = [];
+
+    // The screen checks set up in the editor for a click, or the two ends of a drag.
+    MacroStep? clickCheck;
+    MacroStep? dragFromCheck;
+    MacroStep? dragToCheck;
 
     UpdateInfo? availableUpdate;
     bool checkingForUpdate;
@@ -140,7 +153,18 @@ public partial class MainWindow : Window
         HotkeyBox.SelectionChanged += (_, _) => { RegisterHotkey(); UpdateControls(); };
 
         StartButton.Click += (_, _) => BeginCountdown();
+        PauseButton.Click += (_, _) => TogglePause();
         StopButton.Click += (_, _) => StopEverything();
+        StepClickAimBox.SelectionChanged += (_, _) => UpdateControls();
+        StepDragFromAimBox.SelectionChanged += (_, _) => UpdateControls();
+        StepDragToAimBox.SelectionChanged += (_, _) => UpdateControls();
+        StepClickCheckButton.Click += async (_, _) => { clickCheck = await EditAimAsync(clickCheck) ?? clickCheck; UpdateControls(); };
+        StepDragFromCheckButton.Click += async (_, _) => { dragFromCheck = await EditAimAsync(dragFromCheck) ?? dragFromCheck; UpdateControls(); };
+        StepDragToCheckButton.Click += async (_, _) => { dragToCheck = await EditAimAsync(dragToCheck) ?? dragToCheck; UpdateControls(); };
+        StepUndoButton.Click += (_, _) => UndoMacro();
+        StepRedoButton.Click += (_, _) => RedoMacro();
+        KeyDown += OnWindowKeyDown;
+        BindingActionBox.SelectionChanged += (_, _) => UpdateControls();
         PickButton.Click += (_, _) => StartPick(PositionX, PositionY, PickButton);
         DragFromPick.Click += (_, _) => StartPick(DragFromX, DragFromY, DragFromPick);
         DragToPick.Click += (_, _) => StartPick(DragToX, DragToY, DragToPick);
@@ -280,6 +304,10 @@ public partial class MainWindow : Window
         StepDownButton.IsEnabled = canEditMacro && selected >= 0 && selected < macro.Steps.Count - 1;
         StepDeleteButton.IsEnabled = canEditMacro && selected >= 0;
         StepClearButton.IsEnabled = canEditMacro && macro.Steps.Count > 0;
+        StepUndoButton.IsEnabled = canEditMacro && undoStack.Count > 0;
+        StepRedoButton.IsEnabled = canEditMacro && redoStack.Count > 0;
+        ToolTip.SetTip(StepUndoButton, undoStack.Count > 0 ? "Undo " + undoStack[^1].What + " (Ctrl+Z)." : "Undoes the last change to the lines (Ctrl+Z).");
+        ToolTip.SetTip(StepRedoButton, redoStack.Count > 0 ? "Redo " + redoStack[^1].What + " (Ctrl+Y)." : "Does again what Undo took back (Ctrl+Y).");
         MacroSaveButton.IsEnabled = canEditMacro && macro.Steps.Count > 0;
         StepClickPanel.IsEnabled = StepDragPanel.IsEnabled = StepKeyPanel.IsEnabled =
             StepWaitPanel.IsEnabled = StepForPanel.IsEnabled = StepGoToPanel.IsEnabled = canEditMacro;
@@ -299,6 +327,18 @@ public partial class MainWindow : Window
         StepWaitPanel.IsVisible = type == TypeWait;
         StepForPanel.IsVisible = type == TypeFor;
         StepGoToPanel.IsVisible = type == TypeGoTo;
+        bool clickAims = StepClickAimBox.SelectedIndex == 1;
+        bool fromAims = StepDragFromAimBox.SelectedIndex == 1, toAims = StepDragToAimBox.SelectedIndex == 1;
+        StepClickSpotRow.IsVisible = !clickAims;
+        StepClickCheckRow.IsVisible = clickAims;
+        StepDragFromSpotRow.IsVisible = !fromAims;
+        StepDragFromCheckRow.IsVisible = fromAims;
+        StepDragToSpotRow.IsVisible = !toAims;
+        StepDragToCheckRow.IsVisible = toAims;
+        ShowAim(StepClickCheckText, clickCheck);
+        ShowAim(StepDragFromCheckText, dragFromCheck);
+        ShowAim(StepDragToCheckText, dragToCheck);
+        StepAimTip.IsVisible = (type == TypeClick && clickAims) || (type == TypeDrag && (fromAims || toAims));
         StepGoToLine.Maximum = Math.Max(1, macro.Steps.Count + 1);
         StepControlHint.Text = ControlHint(type);
         StepControlHint.IsVisible = StepControlHint.Text != null;
@@ -317,16 +357,34 @@ public partial class MainWindow : Window
         BindingsEmpty.IsVisible = bindings.Count == 0;
         BindingList.IsVisible = bindings.Count > 0;
         BindingReplaceButton.IsEnabled = BindingLoadButton.IsEnabled = BindingRemoveButton.IsEnabled = bindingSelected;
-        BindingLoadButton.IsEnabled = bindingSelected && !busy;
+        BindingLoadButton.IsEnabled = bindingSelected && !busy && !bindings[binding].Binding.IsControl;
+        var action = ChosenBindingAction;
+        BindingLine.IsVisible = action == BindingAction.GoToLine;
+        BindingLineLabel.IsVisible = BindingLine.IsVisible;
+        BindingAlongside.IsVisible = action == BindingAction.StartStop;
+        BindingAddButton.Content = action == BindingAction.StartStop ? "Add current setup" : "Add key";
 
         StartButton.IsEnabled = !busy && backend.IsAvailable;
         StopButton.IsEnabled = IsBusy || BindingsRunning > 0;
         StartButton.Content = hotkeyError == null ? "Start (" + HotkeyName + ")" : "Start";
         StopButton.Content = hotkeyError == null ? "Stop (" + HotkeyName + ")" : "Stop";
+        PauseButton.IsEnabled = mainRun.IsRunning;
+        string pauseKey = bindings.FirstOrDefault(s => s.Binding.Action == BindingAction.Pause && s.Error == null) is { } pauseSlot
+            ? " (" + pauseSlot.Binding.KeyName + ")" : "";
+        PauseButton.Content = (mainRun.IsPaused ? "Resume" : "Pause") + pauseKey;
 
         UpdateMacroSummary();
         RefreshStatus();
     }
+
+    /// <summary>Shows what a click's or drag's screen check looks for, or that it isn't set up yet.</summary>
+    static void ShowAim(TextBlock text, MacroStep? check)
+    {
+        text.Text = check?.DescribeAim() ?? "not set up yet";
+        ToolTip.SetTip(text, check?.DescribeAim() ?? "Press Screen check… to choose what to look for.");
+    }
+
+    BindingAction ChosenBindingAction => (BindingAction)Math.Clamp(BindingActionBox.SelectedIndex, 0, 3);
 
     void RefreshState()
     {
@@ -358,10 +416,35 @@ public partial class MainWindow : Window
             lastCount = count;
             UpdateControls();
         }
-        else if (running && mainRun.Macro != null)
+        else if (running)
         {
-            RefreshStatus();   // step counter ticks along while the pass count holds still
+            RefreshStatus();   // line counter, pause and resume countdown tick along while the count holds still
         }
+
+        // While paused, the line it's held at is selected, so it's easy to see.
+        bool paused = mainRun.IsPaused;
+        if (paused && mainRun.Macro is { } held && Mode == AutomationMode.Macro)
+        {
+            int line = held.CurrentStepIndex;
+            if (line >= 0 && line < stepRows.Count && StepList.SelectedIndex != line) StepList.SelectedIndex = line;
+        }
+        if (paused != wasPaused)
+        {
+            wasPaused = paused;
+            UpdateControls();
+        }
+    }
+
+    bool wasPaused;
+
+    /// <summary>The Pause button and pause keys: holds the window's run, or lets it carry on after the resume delay.</summary>
+    void TogglePause()
+    {
+        if (!mainRun.IsRunning) return;
+        if (mainRun.IsPaused) mainRun.Control.Resume((int)Dec(ResumeDelayBox) * 1000);
+        else mainRun.Control.Pause();
+        RefreshState();
+        UpdateControls();
     }
 
     void RefreshStatus()
@@ -378,6 +461,12 @@ public partial class MainWindow : Window
             text = "Recording your clicks and keys. Press " + HotkeyName + " to finish.";
         else if (countdownTimer.IsEnabled)
             text = "Starting in " + countdown + "… switch to your target window.";
+        else if (mainRun.IsPaused)
+            text = "Paused · " + Counted(mainRun, count) + "." + StepProgress() + " Press Resume" +
+                   (KeyFor(BindingAction.Pause) is { } pauseKey ? " or " + pauseKey : "") + " to carry on" +
+                   (mainRun.Macro != null && KeyFor(BindingAction.Step) is { } stepKeyName ? ", or " + stepKeyName + " to run one line" : "") + ".";
+        else if (mainRun.IsRunning && mainRun.Control.ResumeLeftMs > 0)
+            text = "Resuming in " + (mainRun.Control.ResumeLeftMs / 1000).ToString("0.0", CultureInfo.CurrentCulture) + " s… switch to your target window.";
         else if (mainRun.IsRunning)
             text = "Running · " + Counted(mainRun, count) + "." + StepProgress() + LagNote(mainRun) +
                    (hotkeyError == null ? " Press " + HotkeyName + " to stop." : "");
@@ -407,6 +496,10 @@ public partial class MainWindow : Window
         return " Slowed " + multiplier.ToString("N0", CultureInfo.CurrentCulture) + "× for lag.";
     }
 
+    /// <summary>The key of the first working binding that does <paramref name="action"/>, or null.</summary>
+    string? KeyFor(BindingAction action) =>
+        bindings.FirstOrDefault(s => s.Binding.Action == action && s.Error == null)?.Binding.KeyName;
+
     string StepProgress()
     {
         var running = mainRun.Macro;
@@ -421,11 +514,16 @@ public partial class MainWindow : Window
     {
         var setup = BuildSetup();
         if (setup == null) { UpdateControls(); return; }
+        // Started from the button, the first clicks or keys would land on this window,
+        // so give the user a moment to switch to their target (unless they chose no delay).
+        countdown = (int)Dec(StartDelayBox);
+        if (countdown <= 0)
+        {
+            StartNow();
+            return;
+        }
         // Use the countdown to learn what the target looks like when it's keeping up.
         if (setup.LagCheck) mainRun.WatchAhead();
-        // Started from the button, the first clicks or keys would land on this window,
-        // so give the user a moment to switch to their target.
-        countdown = StartCountdownSeconds;
         countdownTimer.Start();
         UpdateControls();
     }
@@ -448,13 +546,14 @@ public partial class MainWindow : Window
         else StartNow();
     }
 
-    void StartNow()
+    /// <param name="startLine">For a macro: the line (from 0) the first pass starts at, for a Go to line key.</param>
+    void StartNow(int startLine = 0)
     {
         var setup = BuildSetup();
         if (setup == null) { mainRun.Stop(); UpdateControls(); return; }
         SaveSettings();
         BeforeRunStarts();
-        mainRun.Start(setup);
+        mainRun.Start(setup, startLine: startLine);
         UpdateControls();
     }
 
@@ -618,6 +717,7 @@ public partial class MainWindow : Window
 
         if (setup.Mode == AutomationMode.Macro)
         {
+            if (macro.Steps.Count > 0) Remember("loading a binding's macro");
             macro.Steps.Clear();
             macro.Steps.AddRange(setup.Steps.Select(step => step.Clone()));
             RebuildStepRows();
@@ -723,6 +823,7 @@ public partial class MainWindow : Window
         }
         else
         {
+            Remember("recording");
             macro.Steps.AddRange(steps);
             transientMessage = "Added " + steps.Count + (steps.Count == 1 ? " step" : " steps") + " from the recording.";
             RebuildStepRows();
@@ -740,12 +841,12 @@ public partial class MainWindow : Window
 
     static string? ControlHint(int type) => type switch
     {
-        TypeIf => "Add opens the condition: screen checks joined with and, or and not. The If comes with its End if; " +
-                  "the lines between them run only when the condition is true. Double-click an If to change its condition.",
+        TypeIf => "Add opens the condition window, where you add screen checks and choose and/or between them. The If comes " +
+                  "with its End if; the lines between them run only when the condition is true. Double-click an If to change it.",
         TypeElseIf => "Goes inside an If, below its lines: tried when the If (and any Else if above) was false. Add opens its condition.",
         TypeElse => "Goes inside an If, below its lines and any Else if: its lines run when nothing above was true.",
-        TypeWhile => "Add opens the condition, how often to check it, and how long it may loop. The lines up to End while " +
-                     "repeat for as long as the condition is true.",
+        TypeWhile => "Add opens the condition window: its screen checks, how often to check, and how long it may loop. " +
+                     "The lines up to End while repeat for as long as the condition is true.",
         TypeFor => null,
         TypeGoTo => null,
         TypeStop => "Ends the whole run, like pressing Stop.",
@@ -777,6 +878,12 @@ public partial class MainWindow : Window
             MacroSummary.Text = lines + " · " + problem;
             return;
         }
+        if (UnguardedAim() is { } line)
+        {
+            MacroSummary.Text = lines + " · Tip: line " + (line + 1) + " aims at a screen check outside any If or While; " +
+                                "put it inside one that checks the same thing, so it only runs when the target is there.";
+            return;
+        }
         if (macro.Steps.Exists(step => step.IsControl))
         {
             MacroSummary.Text = lines + (string.IsNullOrEmpty(macro.Name) ? "" : " · " + macro.Name);
@@ -789,23 +896,52 @@ public partial class MainWindow : Window
         MacroSummary.Text = lines + " · one pass takes about " + length;
     }
 
+    /// <summary>The first click or drag aimed by a screen check that isn't inside an If or While; null if there's none.</summary>
+    int? UnguardedAim()
+    {
+        var blocks = MacroBlocks.Analyze(macro.Steps);
+        for (int i = 0; i < macro.Steps.Count; i++)
+        {
+            if (!macro.Steps[i].AimChecks.Any()) continue;
+            bool guarded = false;
+            for (int j = 0; j < i && !guarded; j++)
+                guarded = macro.Steps[j].Kind is StepKind.If or StepKind.While && blocks.End[j] > i;
+            if (!guarded) return i;
+        }
+        return null;
+    }
+
     MacroStep? BuildStepFromEditor()
     {
+        const string NoCheck = "Press Screen check… to set up what the line aims at, or switch it back to A spot.";
         switch (StepTypeBox.SelectedIndex)
         {
             case TypeClick:
-                return MacroStep.MakeClick(
+            {
+                bool aims = StepClickAimBox.SelectedIndex == 1;
+                if (aims && clickCheck == null) { validationMessage = NoCheck; return null; }
+                var click = MacroStep.MakeClick(
                     (ClickButton)Math.Clamp(StepClickButtonBox.SelectedIndex, 0, 2),
                     StepClickTypeBox.SelectedIndex == 1 ? 2 : 1,
                     new PixelPoint((int)Dec(StepClickX), (int)Dec(StepClickY)),
                     holdMs: ReadHoldMs(StepPressBox, StepHoldBox, StepHoldCustom));
+                click.FromCheck = aims ? clickCheck!.Clone() : null;
+                return click;
+            }
 
             case TypeDrag:
-                return MacroStep.MakeDrag(
+            {
+                bool fromAims = StepDragFromAimBox.SelectedIndex == 1, toAims = StepDragToAimBox.SelectedIndex == 1;
+                if ((fromAims && dragFromCheck == null) || (toAims && dragToCheck == null)) { validationMessage = NoCheck; return null; }
+                var drag = MacroStep.MakeDrag(
                     (ClickButton)Math.Clamp(StepDragButtonBox.SelectedIndex, 0, 2),
                     new PixelPoint((int)Dec(StepDragFromX), (int)Dec(StepDragFromY)),
                     new PixelPoint((int)Dec(StepDragToX), (int)Dec(StepDragToY)),
                     (int)Dec(StepDragDuration));
+                drag.FromCheck = fromAims ? dragFromCheck!.Clone() : null;
+                drag.ToCheck = toAims ? dragToCheck!.Clone() : null;
+                return drag;
+            }
 
             case TypeKey:
                 if (stepKey == Key.None)
@@ -878,9 +1014,13 @@ public partial class MainWindow : Window
             : MacroStep.MakeIf(result.Condition, elseIf: kind == StepKind.ElseIf);
     }
 
+    /// <summary>Opens the screen check editor for a click or drag end; null if cancelled.</summary>
+    async System.Threading.Tasks.Task<MacroStep?> EditAimAsync(MacroStep? current) =>
+        await CheckStepWindow.EditAsync(this, backend, current?.Clone(), aim: true);
+
     /// <summary>
-    /// Double-clicking an If, Else if or While opens its condition. A For or Go to line is put in
-    /// the editor below, ready to change and Replace.
+    /// Double-clicking an If, Else if or While opens its condition. Any other line is put in the
+    /// editor below, ready to change and Replace.
     /// </summary>
     async System.Threading.Tasks.Task EditSelectedStepAsync()
     {
@@ -894,6 +1034,43 @@ public partial class MainWindow : Window
                 var changed = await EditConditionAsync(step.Kind, step);
                 if (changed != null) ReplaceStep(selected, changed);
                 break;
+            case StepKind.Click:
+                StepTypeBox.SelectedIndex = TypeClick;
+                StepClickButtonBox.SelectedIndex = (int)step.Button;
+                StepClickTypeBox.SelectedIndex = step.ClickCount > 1 ? 1 : 0;
+                SetValue(StepClickX, step.FromX);
+                SetValue(StepClickY, step.FromY);
+                SetHold(StepPressBox, StepHoldBox, StepHoldCustom, step.HoldMs);
+                if (step.FromCheck != null) clickCheck = step.FromCheck.Clone();
+                StepClickAimBox.SelectedIndex = step.FromCheck != null ? 1 : 0;
+                break;
+            case StepKind.Drag:
+                StepTypeBox.SelectedIndex = TypeDrag;
+                StepDragButtonBox.SelectedIndex = (int)step.Button;
+                SetValue(StepDragFromX, step.FromX);
+                SetValue(StepDragFromY, step.FromY);
+                SetValue(StepDragToX, step.ToX);
+                SetValue(StepDragToY, step.ToY);
+                SetValue(StepDragDuration, step.DurationMs);
+                if (step.FromCheck != null) dragFromCheck = step.FromCheck.Clone();
+                if (step.ToCheck != null) dragToCheck = step.ToCheck.Clone();
+                StepDragFromAimBox.SelectedIndex = step.FromCheck != null ? 1 : 0;
+                StepDragToAimBox.SelectedIndex = step.ToCheck != null ? 1 : 0;
+                break;
+            case StepKind.Key:
+                StepTypeBox.SelectedIndex = TypeKey;
+                stepKey = KeyMap.IsSupported(step.Key) ? step.Key : Key.None;
+                StepModCtrl.IsChecked = step.Modifiers.HasFlag(Modifiers.Control);
+                StepModShift.IsChecked = step.Modifiers.HasFlag(Modifiers.Shift);
+                StepModAlt.IsChecked = step.Modifiers.HasFlag(Modifiers.Alt);
+                StepModMeta.IsChecked = step.Modifiers.HasFlag(Modifiers.Meta);
+                SetValue(StepKeyHold, step.DurationMs);
+                UpdateKeyCaptureText();
+                break;
+            case StepKind.Wait:
+                StepTypeBox.SelectedIndex = TypeWait;
+                SetValue(StepWaitMs, step.DurationMs);
+                break;
             case StepKind.For:
                 StepTypeBox.SelectedIndex = TypeFor;
                 StepForUnit.SelectedIndex = step.ForSeconds ? 1 : 0;
@@ -903,7 +1080,11 @@ public partial class MainWindow : Window
                 StepTypeBox.SelectedIndex = TypeGoTo;
                 StepGoToLine.Value = Math.Clamp(step.Line, 1, (int)StepGoToLine.Maximum);
                 break;
+            default:
+                return;
         }
+        transientMessage = "Line " + (selected + 1) + " is in the editor below. Change it, then press Replace.";
+        UpdateControls();
     }
 
     /// <summary>
@@ -912,6 +1093,7 @@ public partial class MainWindow : Window
     /// </summary>
     void InsertStep(MacroStep step)
     {
+        Remember(step.OpensBlock ? "adding " + MacroBlocks.Name(step.Kind) : "adding a line");
         int selected = StepList.SelectedIndex;
         int at = selected >= 0 && selected < macro.Steps.Count ? selected + 1 : macro.Steps.Count;
         var added = new List<MacroStep> { step };
@@ -932,6 +1114,7 @@ public partial class MainWindow : Window
     /// </summary>
     void ReplaceStep(int index, MacroStep step)
     {
+        Remember("replacing line " + (index + 1));
         var old = macro.Steps[index];
         int oldEnd = old.OpensBlock ? MacroBlocks.Analyze(macro.Steps).End[index] : -1;
         macro.Steps[index] = step;
@@ -954,6 +1137,7 @@ public partial class MainWindow : Window
         int index = StepList.SelectedIndex;
         int target = index + offset;
         if (index < 0 || target < 0 || target >= macro.Steps.Count) return;
+        Remember("moving line " + (index + 1));
 
         (macro.Steps[index], macro.Steps[target]) = (macro.Steps[target], macro.Steps[index]);
         int a = index + 1, b = target + 1;
@@ -971,6 +1155,7 @@ public partial class MainWindow : Window
     {
         int index = StepList.SelectedIndex;
         if (index < 0 || index >= macro.Steps.Count) return;
+        Remember("deleting line " + (index + 1));
 
         var remove = new SortedSet<int> { index };
         var blocks = MacroBlocks.Analyze(macro.Steps);
@@ -998,18 +1183,67 @@ public partial class MainWindow : Window
 
         foreach (int i in remove.Reverse()) macro.Steps.RemoveAt(i);
         Macro.Renumber(macro.Steps, n => n >= 1 && n < newLine.Length ? newLine[n] : n);
-        RebuildStepRows(Math.Min(remove.Min, macro.Steps.Count - 1));
+        // The line above what was deleted stays selected, ready for the next edit there.
+        RebuildStepRows(Math.Min(Math.Max(0, remove.Min - 1), macro.Steps.Count - 1));
         SaveCurrentMacro();
         UpdateControls();
     }
 
     void ClearSteps()
     {
+        if (macro.Steps.Count == 0) return;
+        Remember("clearing the macro");
         macro.Steps.Clear();
         macro.Name = null;
         RebuildStepRows();
         SaveCurrentMacro();
         UpdateControls();
+    }
+
+    // ---------------------------------------------------------------- undo
+
+    MacroSnapshot Snapshot(string what) =>
+        new(macro.Steps.Select(step => step.Clone()).ToList(), macro.Name, StepList.SelectedIndex, what);
+
+    /// <summary>Keeps the lines as they are now, before a change described by <paramref name="what"/>, for Undo.</summary>
+    void Remember(string what)
+    {
+        undoStack.Add(Snapshot(what));
+        if (undoStack.Count > UndoLimit) undoStack.RemoveAt(0);
+        redoStack.Clear();
+    }
+
+    void UndoMacro() => Swap(undoStack, redoStack, "Undid ");
+
+    void RedoMacro() => Swap(redoStack, undoStack, "Redid ");
+
+    /// <summary>Puts back the newest snapshot of <paramref name="from"/>, keeping the lines it replaces in <paramref name="to"/>.</summary>
+    void Swap(List<MacroSnapshot> from, List<MacroSnapshot> to, string verb)
+    {
+        if (from.Count == 0 || IsBusy || IsRecording) return;
+        var snapshot = from[^1];
+        from.RemoveAt(from.Count - 1);
+        to.Add(Snapshot(snapshot.What));
+
+        macro.Steps.Clear();
+        macro.Steps.AddRange(snapshot.Steps.Select(step => step.Clone()));
+        macro.Name = snapshot.Name;
+        RebuildStepRows(Math.Min(snapshot.Selected, macro.Steps.Count - 1));
+        SaveCurrentMacro();
+        validationMessage = null;
+        transientMessage = verb + snapshot.What + ".";
+        UpdateControls();
+    }
+
+    /// <summary>Ctrl+Z and Ctrl+Y (or Ctrl+Shift+Z; Cmd on a Mac) undo and redo macro changes, unless a text box takes them.</summary>
+    void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || Mode != AutomationMode.Macro) return;
+        bool command = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        if (!command || FocusManager?.GetFocusedElement() is TextBox) return;
+        bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        if (e.Key == Key.Z && !shift) { UndoMacro(); e.Handled = true; }
+        else if (e.Key == Key.Y || (e.Key == Key.Z && shift)) { RedoMacro(); e.Handled = true; }
     }
 
     // ---------------------------------------------------------------- saved macros
@@ -1091,6 +1325,7 @@ public partial class MainWindow : Window
             catch (Exception) { /* it still loads; it'll just be upgraded again next time */ }
         }
 
+        Remember("loading \"" + name + "\"");
         macro.Steps.Clear();
         macro.Steps.AddRange(loaded.Steps);
         macro.Name = name;
@@ -1342,8 +1577,10 @@ public partial class MainWindow : Window
     async System.Threading.Tasks.Task<bool> ConfirmAsync(string title, string heading, string detail, string yes, string no)
     {
         var yesButton = new Button { Content = yes, MinWidth = 90, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, IsDefault = true };
+        ToolTip.SetTip(yesButton, "Goes ahead (Enter).");
         yesButton.Classes.Add("accent");
         var noButton = new Button { Content = no, MinWidth = 90, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, IsCancel = true };
+        ToolTip.SetTip(noButton, "Leaves everything as it is (Esc).");
 
         var dialog = new Window
         {
@@ -1387,13 +1624,16 @@ public partial class MainWindow : Window
         Func<string, string?> problem)
     {
         var box = new TextBox { Text = initial, MaxLength = MacroLibrary.MaxNameLength };
+        ToolTip.SetTip(box, "Up to " + MacroLibrary.MaxNameLength + " characters. Letters, numbers, spaces and most punctuation work; / \\ : * ? \" < > | don't.");
         var error = new TextBlock
         {
             Foreground = Avalonia.Media.Brushes.IndianRed, TextWrapping = Avalonia.Media.TextWrapping.Wrap, IsVisible = false
         };
         var yesButton = new Button { Content = yes, MinWidth = 90, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, IsDefault = true };
+        ToolTip.SetTip(yesButton, "Uses this name (Enter).");
         yesButton.Classes.Add("accent");
         var noButton = new Button { Content = "Cancel", MinWidth = 90, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, IsCancel = true };
+        ToolTip.SetTip(noButton, "Closes without changing anything (Esc).");
 
         var dialog = new Window
         {
@@ -1587,6 +1827,11 @@ public partial class MainWindow : Window
     void ToggleBinding(BindingSlot slot)
     {
         if (IsRecording) return;   // the key is probably being pressed to be recorded
+        if (slot.Binding.IsControl)
+        {
+            ControlMainRun(slot.Binding);
+            return;
+        }
         if (slot.Session.IsRunning)
         {
             EndSession(slot.Session);
@@ -1616,6 +1861,53 @@ public partial class MainWindow : Window
         UpdateControls();
     }
 
+    /// <summary>A pause, step or go-to-line key: acts on the run started from the window.</summary>
+    void ControlMainRun(KeyBinding binding)
+    {
+        switch (binding.Action)
+        {
+            case BindingAction.Pause:
+                if (mainRun.IsRunning) TogglePause();
+                break;
+
+            case BindingAction.Step:
+                // Only while paused; a running macro carries on as it is.
+                if (mainRun.IsPaused && mainRun.Macro != null) mainRun.Control.Step();
+                break;
+
+            case BindingAction.GoToLine:
+            {
+                if (mainRun.IsRunning)
+                {
+                    if (mainRun.Macro == null) break;   // clicks, drags and keys have no lines
+                    int count = mainRun.Setup?.Steps.Count ?? 0;
+                    if (binding.Line > count)
+                    {
+                        transientMessage = BindingLabel(binding) + ": the running macro has only " + count + (count == 1 ? " line." : " lines.");
+                        break;
+                    }
+                    mainRun.Control.JumpTo(binding.Line - 1);
+                    break;
+                }
+                if (Mode != AutomationMode.Macro)
+                {
+                    transientMessage = BindingLabel(binding) + " goes to a line of the macro. Switch Automate to Macro first.";
+                    break;
+                }
+                if (binding.Line > macro.Steps.Count)
+                {
+                    transientMessage = BindingLabel(binding) + ": the macro has only " + macro.Steps.Count + (macro.Steps.Count == 1 ? " line." : " lines.");
+                    break;
+                }
+                // Not running: start it from that line, straight away like the start/stop key.
+                countdownTimer.Stop();
+                StartNow(binding.Line - 1);
+                break;
+            }
+        }
+        UpdateControls();
+    }
+
     void RebuildBindingRows()
     {
         int selected = BindingList.SelectedIndex;
@@ -1625,8 +1917,8 @@ public partial class MainWindow : Window
             var binding = slot.Binding;
             string row = binding.KeyName + "  ·  " +
                          (string.IsNullOrWhiteSpace(binding.Name) ? "" : binding.Name + ": ") +
-                         binding.Setup.Describe() +
-                         (binding.RunAlongside ? " · alongside" : "");
+                         (binding.IsControl ? binding.ControlText : binding.Setup.Describe() +
+                                                                    (binding.RunAlongside ? " · alongside" : ""));
             if (slot.Error != null) row = "⚠ " + row + " · key unavailable: " + slot.Error;
             else if (slot.Session.IsRunning) row = "▶ " + row + " · running";
             bindingRows.Add(row);
@@ -1644,6 +1936,8 @@ public partial class MainWindow : Window
             bindingKey = binding.Key;
             bindingModifiers = binding.Modifiers;
             BindingAlongside.IsChecked = binding.RunAlongside;
+            BindingActionBox.SelectedIndex = (int)binding.Action;
+            SetValue(BindingLine, binding.Line);
             UpdateBindingKeyText();
         }
         UpdateControls();
@@ -1676,19 +1970,24 @@ public partial class MainWindow : Window
         if (replaceSelected && (index < 0 || index >= bindings.Count)) return;
         var existing = index >= 0 ? bindings[index] : null;
 
+        var action = ChosenBindingAction;
         var binding = new KeyBinding
         {
             Name = (BindingName.Text ?? "").Trim(),
             Key = bindingKey,
             Modifiers = bindingModifiers,
-            RunAlongside = BindingAlongside.IsChecked == true,
-            Setup = CaptureSetup()
+            Action = action,
+            Line = (int)Dec(BindingLine),
+            RunAlongside = action == BindingAction.StartStop && BindingAlongside.IsChecked == true,
+            // Control keys act on the window's run and keep no setup of their own.
+            Setup = action == BindingAction.StartStop ? CaptureSetup() : new RunSetup()
         };
 
         string? problem = bindingKey == Key.None ? "Click the key box next to the name and press the key that should start it."
             : binding.SameKeyAs(HotkeyKey, Modifiers.None) ? HotkeyName + " is already the start/stop key. Pick another key."
             : bindings.FirstOrDefault(s => s != existing && s.Binding.SameKeyAs(bindingKey, bindingModifiers)) is { } taken
-                ? binding.KeyName + " already starts " + BindingLabel(taken.Binding) + ". Pick another key, or select that one and Replace it."
+                ? binding.KeyName + " is already used by " + BindingLabel(taken.Binding) + ". Pick another key, or select that one and Replace it."
+            : binding.IsControl ? null
             : binding.Setup.Problem() ?? KeyClash(binding.Setup, binding);
         if (problem != null) { transientMessage = problem; UpdateControls(); return; }
 
@@ -1717,7 +2016,9 @@ public partial class MainWindow : Window
         else RebuildBindingRows();
 
         SaveBindings();
-        transientMessage = (existing == null ? "Added " : "Updated ") + BindingLabel(binding) + ". Its key starts and stops it anywhere.";
+        transientMessage = (existing == null ? "Added " : "Updated ") + BindingLabel(binding) + (binding.IsControl
+            ? ". Press it in any window to " + char.ToLowerInvariant(binding.ControlText[0]) + binding.ControlText[1..] + "."
+            : ". Its key starts and stops it anywhere.");
         UpdateControls();
     }
 
@@ -1805,6 +2106,8 @@ public partial class MainWindow : Window
         LagNotifyBox.IsChecked = settings.GetBool("LagNotify", true);
         SetValue(PickSecondsBox, Math.Clamp(settings.GetInt("PickSeconds", ScreenPicker.DefaultSeconds), ScreenPicker.MinSeconds, ScreenPicker.MaxSeconds));
         PickOnClickBox.IsChecked = settings.GetBool("PickOnClick", false);
+        SetValue(StartDelayBox, settings.GetDecimal("StartDelaySeconds", DefaultStartDelaySeconds));
+        SetValue(ResumeDelayBox, settings.GetDecimal("ResumeDelaySeconds", 0));
         ApplyPickSettings();
         Topmost = TopMostBox.IsChecked == true;
     }
@@ -1845,6 +2148,8 @@ public partial class MainWindow : Window
         settings.Set("LagNotify", LagNotifyBox.IsChecked == true);
         settings.Set("PickSeconds", ScreenPicker.Seconds);
         settings.Set("PickOnClick", ScreenPicker.PickOnClick);
+        settings.Set("StartDelaySeconds", Dec(StartDelayBox));
+        settings.Set("ResumeDelaySeconds", Dec(ResumeDelayBox));
         settings.Save();
     }
 

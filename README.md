@@ -36,14 +36,14 @@ Get the file for your machine from the [latest release](https://github.com/Swift
 2. Set the interval under **Timing**.
 3. Hover over your target (or switch to the target window) and press **F6**. Press **F6** again to stop.
 
-Clicking **Start** instead counts down 3 seconds first, so you can switch to the target window before it begins.
+Clicking **Start** instead waits a few seconds first (3 by default; set **Start delay** under **Options**, 0 to start at once), so you can switch to the target window before it begins. **Pause** holds the run between steps, never halfway through a click or key press, and **Resume** carries on after the **Resume delay** (0 seconds by default). Hover over any control for a short explanation of what it does.
 
 ### Macros
 
 Pick **Macro** from the dropdown, then either:
 
 - **Record**: press **Record**, wait for the 2-second countdown, do the thing, then press **F6** to finish. What you did is added to the list as steps. The key you use to stop isn't recorded.
-- **Build by hand**: choose a line type under **Add**, fill in the details (**Pick** grabs a screen position after a countdown) and press **Add**. The new line goes below the selected one (or at the end). Select a line to move, delete or **Replace** it.
+- **Build by hand**: choose a line type under **Add**, fill in the details (**Pick** grabs a screen position after a countdown) and press **Add**. The new line goes below the selected one (or at the end). Select a line to move, delete or **Replace** it; double-click one to load it into the editor. After a delete, the line above it is selected. **Undo** and **Redo** (Ctrl+Z and Ctrl+Y) take back any change to the lines, up to 100 of them, including Clear, recording and loading a saved macro.
 
 **Picking a spot on the screen** works the same everywhere (**Pick**, **Dropper**, **Pick & add**, **Drag area…**, **Capture from screen…**). The app's windows get out of the way, and a countdown next to the mouse shows the time left. When it runs out, the spot under the mouse is taken (a drag-a-box that hasn't been started is cancelled). **Time to pick a spot** under **Options** sets the time, from 1 to 60 seconds (3 by default). Turn on **A click picks right away** to pick with a left click instead of waiting. That click is held back from whatever is under the mouse.
 
@@ -61,11 +61,21 @@ Lines inside a block are indented, with a guide line per level, and blocks can g
 - **Go to line** carries on from another line. Jumping out of a loop ends it, and jumping into a block runs its lines as if its condition were true. Line numbers in Go to lines follow along when lines are moved, added or deleted.
 - **Stop macro** ends the whole run, like pressing Stop.
 
-Adding an If, While or For adds its End line too and selects it, so the next lines you add go inside. **Delete** on an If, While or For (or its End line) removes the block's frame (its Else if, Else and End lines too) and keeps the lines inside. Double-click an If, Else if or While to change its condition, or a For or Go to line to load it into the editor for **Replace**. A macro whose blocks don't match up says what's wrong above the list and won't start.
+Adding an If, While or For adds its End line too and selects it, so the next lines you add go inside. **Delete** on an If, While or For (or its End line) removes the block's frame (its Else if, Else and End lines too) and keeps the lines inside. Double-click an If, Else if or While to change its condition, or any other line to load it into the editor for **Replace**. A macro whose blocks don't match up says what's wrong above the list and won't start.
 
 #### Conditions and screen checks
 
-Adding an If, Else if or While opens its condition. A condition is made of **screen checks**, each of which says found or not found. Tick **not** to turn one around. A group of items is true when **all** of them are (and) or when **any** one is (or), and groups can go inside groups, for things like (A and not B) or C. **Test now** works the whole condition out against the screen right away.
+Adding an If, Else if or While opens its condition window. Press **+ Screen check…** to add each check; every check says found or not found, and ticking **not** turns one around. Between each check and the one above it, choose **and** (both must be true) or **or** (either is enough). As usual, "and" goes first: A or B and C means A or (B and C), and the preview at the top shows the brackets. For anything else, like (A or B) and C, **+ Group** makes brackets of its own. The condition can't be saved until it has at least one check. **Test now** works the whole condition out against the screen right away.
+
+#### Clicking where a check finds something
+
+A **Click** can go **at a screen check** instead of a fixed spot, and so can either end of a **Drag**. Press **Screen check…** to set it up: what to look for and where, as above, plus **Click at**:
+
+- **Its exact center**: the middle of what's found. For one color that's the middle of the patch of that color it finds; for several colors, the middle of the box around them; for an image, the middle of the image.
+- **Its center, moved by pixels**: + X goes right, + Y goes up.
+- **Its center, moved by a share of its size**: X 100% is its right edge and -100% its left edge; Y 100% is its top edge and -100% its bottom edge.
+
+The check looks right before the line runs. If it finds nothing, the line is skipped. That's why the app suggests putting such a line inside an If or While that checks the same thing, so it only runs when the target is there.
 
 Each screen check has these settings:
 
@@ -85,6 +95,14 @@ Each screen check has these settings:
 3. From any window, press that key to start it and again to stop it. **Stop** in the app stops everything that's running.
 
 A binding with **Run alongside others** off stops whatever else is running when you start it, so only it runs. With it on, it starts next to whatever is already going. **Load into window** puts a binding's setup back into the window so you can change it; **Replace** saves the window's setup, name, key and option over the selected binding.
+
+Under **Does**, a key can also control the run started from the window instead of starting a setup of its own:
+
+- **Pause / resume**: the same as the **Pause** button. Resuming waits for the **Resume delay**.
+- **Step one line**: while the macro is paused, runs exactly one line, then holds again. It does nothing while the macro is running.
+- **Go to** line N: makes the macro carry on from that line, cutting short a Wait or While in progress. While paused, it moves there and stays paused. When nothing is running, it starts the macro from that line straight away.
+
+While paused, the line it's held at is selected in the list. Pausing also holds Waits and the time limits of While and For loops, so they carry on where they left off.
 
 ### Updating
 
@@ -128,7 +146,8 @@ src/AutoClicker/
              MacroLibrary.cs (saved macros), MacroUpgrade.cs (pre-3.0 macros),
              ScreenCheck.cs + ImageTemplate.cs (color/image checks)
              LagGovernor.cs + LagMonitor.cs (slowing down for lag),
-             RunSetup.cs + RunSession.cs (one run each), KeyBinding.cs
+             RunSetup.cs + RunSession.cs (one run each), KeyBinding.cs,
+             RunControl.cs (pause, step and go to line)
   Input/     one backend per OS, behind IInputBackend:
              Windows SendInput · macOS CGEvent · Linux XTest;
              ScreenProbe.cs watches the screen under the cursor for lag;

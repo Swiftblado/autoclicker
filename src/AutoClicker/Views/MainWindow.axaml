@@ -14,7 +14,8 @@
             Background="#33D97706" BorderBrush="#D97706" BorderThickness="1">
       <StackPanel Spacing="8">
         <TextBlock x:Name="WarningText" TextWrapping="Wrap" />
-        <Button x:Name="OpenAccessibilityButton" Content="Open Accessibility settings" IsVisible="False" />
+        <Button x:Name="OpenAccessibilityButton" Content="Open Accessibility settings" IsVisible="False"
+                ToolTip.Tip="Opens the macOS settings page where Auto Clicker is allowed to control the mouse and keyboard." />
       </StackPanel>
     </Border>
 
@@ -22,7 +23,8 @@
       <Image Source="/Assets/icon.png" Width="26" Height="26" VerticalAlignment="Center" />
       <TextBlock Text="Auto Clicker" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,24,0" />
       <TextBlock Text="Automate" Classes="unit" Margin="0" />
-      <ComboBox x:Name="ModeBox" Width="180" SelectedIndex="0">
+      <ComboBox x:Name="ModeBox" Width="180" SelectedIndex="0"
+                ToolTip.Tip="What to repeat: mouse clicks, mouse drags, key presses, or a macro (a list of steps with If, While and For).">
         <ComboBoxItem>Mouse clicks</ComboBoxItem>
         <ComboBoxItem>Mouse drags</ComboBoxItem>
         <ComboBoxItem>Key presses</ComboBoxItem>
@@ -41,13 +43,13 @@
             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="Button:" Classes="label" />
               <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                <ComboBox x:Name="ButtonBox" Width="110" SelectedIndex="0">
+                <ComboBox x:Name="ButtonBox" Width="110" SelectedIndex="0" ToolTip.Tip="Which mouse button to click.">
                   <ComboBoxItem>Left</ComboBoxItem>
                   <ComboBoxItem>Right</ComboBoxItem>
                   <ComboBoxItem>Middle</ComboBoxItem>
                 </ComboBox>
                 <TextBlock Text="Click:" Classes="label" Margin="14,0,10,0" />
-                <ComboBox x:Name="ClickTypeBox" Width="110" SelectedIndex="0">
+                <ComboBox x:Name="ClickTypeBox" Width="110" SelectedIndex="0" ToolTip.Tip="Single: one click each time. Double: two quick clicks each time.">
                   <ComboBoxItem>Single</ComboBoxItem>
                   <ComboBoxItem>Double</ComboBoxItem>
                 </ComboBox>
@@ -62,12 +64,13 @@
                     <ComboBoxItem>Half click</ComboBoxItem>
                   </ComboBox>
                   <TextBlock x:Name="HoldLabel" Text="held for" Classes="label" Margin="14,0,10,0" />
-                  <ComboBox x:Name="HoldBox" Width="110" SelectedIndex="0" />
+                  <ComboBox x:Name="HoldBox" Width="110" SelectedIndex="0" ToolTip.Tip="How long the button stays down for each click. Custom… takes any time from 0 to 1000 ms." />
                   <Button x:Name="HoldHelp" Classes="help" Content="?" Margin="8,0,0,0" />
                 </StackPanel>
                 <StackPanel x:Name="HoldCustomRow" Orientation="Horizontal" Spacing="6" IsVisible="False">
                   <TextBlock Text="Hold" Classes="unit" Margin="0" />
-                  <NumericUpDown x:Name="HoldCustom" Width="96" Minimum="0" Maximum="1000" Value="20" Increment="1" FormatString="0" />
+                  <NumericUpDown x:Name="HoldCustom" Width="96" Minimum="0" Maximum="1000" Value="20" Increment="1" FormatString="0"
+                                 ToolTip.Tip="Hold time in ms. Under 17 ms (one frame at 60 fps) many apps see it as a half click." />
                   <TextBlock Text="ms" Classes="unit" Margin="0" />
                   <TextBlock x:Name="HoldHalfNote" Text="(counts as a half click)" Classes="unit" Margin="6,0,0,0" IsVisible="False" />
                 </StackPanel>
@@ -75,15 +78,20 @@
 
               <TextBlock Grid.Row="2" Grid.Column="0" Text="Click at:" Classes="label" Margin="0,12,10,0" />
               <StackPanel Grid.Row="2" Grid.Column="1" Spacing="6" Margin="0,12,0,0">
-                <RadioButton x:Name="PositionCursor" GroupName="Position" Content="Wherever the cursor is" IsChecked="True" />
+                <RadioButton x:Name="PositionCursor" GroupName="Position" Content="Wherever the cursor is" IsChecked="True"
+                             ToolTip.Tip="Clicks wherever the mouse is at the time, so you can move it around while it runs." />
                 <StackPanel Orientation="Horizontal">
                   <RadioButton x:Name="PositionFixed" GroupName="Position" Content="Fixed spot"
-                               VerticalAlignment="Center" Margin="0,0,10,0" />
+                               VerticalAlignment="Center" Margin="0,0,10,0"
+                               ToolTip.Tip="Moves the mouse to the same spot for every click." />
                   <TextBlock Text="X" Classes="unit" Margin="0,0,4,0" />
-                  <NumericUpDown x:Name="PositionX" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                  <NumericUpDown x:Name="PositionX" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                                 ToolTip.Tip="Across the screen, in pixels from the left." />
                   <TextBlock Text="Y" Classes="unit" Margin="8,0,4,0" />
-                  <NumericUpDown x:Name="PositionY" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
-                  <Button x:Name="PickButton" Content="Pick" Width="62" Margin="8,0,0,0" />
+                  <NumericUpDown x:Name="PositionY" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                                 ToolTip.Tip="Down the screen, in pixels from the top." />
+                  <Button x:Name="PickButton" Content="Pick" Width="62" Margin="8,0,0,0"
+                          ToolTip.Tip="Hides the windows; the spot under the mouse is taken when the countdown by the mouse ends." />
                 </StackPanel>
               </StackPanel>
             </Grid>
@@ -98,31 +106,38 @@
               <TextBlock Grid.Row="0" Grid.Column="0" Text="Drag from:" Classes="label" />
               <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                 <TextBlock Text="X" Classes="unit" Margin="0,0,4,0" />
-                <NumericUpDown x:Name="DragFromX" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                <NumericUpDown x:Name="DragFromX" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                               ToolTip.Tip="Where the drag starts: across the screen, in pixels from the left." />
                 <TextBlock Text="Y" Classes="unit" Margin="8,0,4,0" />
-                <NumericUpDown x:Name="DragFromY" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
-                <Button x:Name="DragFromPick" Content="Pick" Width="62" Margin="8,0,0,0" />
+                <NumericUpDown x:Name="DragFromY" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                               ToolTip.Tip="Where the drag starts: down the screen, in pixels from the top." />
+                <Button x:Name="DragFromPick" Content="Pick" Width="62" Margin="8,0,0,0"
+                        ToolTip.Tip="Hides the windows; the spot under the mouse is taken when the countdown by the mouse ends." />
               </StackPanel>
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="to:" Classes="label" Margin="0,8,10,0" />
               <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,8,0,0">
                 <TextBlock Text="X" Classes="unit" Margin="0,0,4,0" />
-                <NumericUpDown x:Name="DragToX" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                <NumericUpDown x:Name="DragToX" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                               ToolTip.Tip="Where the drag ends: across the screen, in pixels from the left." />
                 <TextBlock Text="Y" Classes="unit" Margin="8,0,4,0" />
-                <NumericUpDown x:Name="DragToY" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
-                <Button x:Name="DragToPick" Content="Pick" Width="62" Margin="8,0,0,0" />
+                <NumericUpDown x:Name="DragToY" Width="84" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                               ToolTip.Tip="Where the drag ends: down the screen, in pixels from the top." />
+                <Button x:Name="DragToPick" Content="Pick" Width="62" Margin="8,0,0,0"
+                        ToolTip.Tip="Hides the windows; the spot under the mouse is taken when the countdown by the mouse ends." />
               </StackPanel>
 
               <TextBlock Grid.Row="2" Grid.Column="0" Text="Button:" Classes="label" Margin="0,10,10,0" />
               <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,10,0,0">
-                <ComboBox x:Name="DragButtonBox" Width="110" SelectedIndex="0">
+                <ComboBox x:Name="DragButtonBox" Width="110" SelectedIndex="0" ToolTip.Tip="Which mouse button is held down during the drag.">
                   <ComboBoxItem>Left</ComboBoxItem>
                   <ComboBoxItem>Right</ComboBoxItem>
                   <ComboBoxItem>Middle</ComboBoxItem>
                 </ComboBox>
                 <TextBlock Text="taking" Classes="label" Margin="14,0,10,0" />
                 <NumericUpDown x:Name="DragDuration" Width="90" Minimum="10" Maximum="60000" Value="400"
-                               Increment="50" FormatString="0" />
+                               Increment="50" FormatString="0"
+                               ToolTip.Tip="How long the cursor takes to travel from start to end, in ms." />
                 <TextBlock Text="ms" Classes="unit" />
               </StackPanel>
             </Grid>
@@ -136,23 +151,25 @@
             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="Key:" Classes="label" />
               <Border Grid.Row="0" Grid.Column="1" x:Name="KeyCapture" Classes="keyCapture"
-                      Focusable="True" HorizontalAlignment="Left">
+                      Focusable="True" HorizontalAlignment="Left"
+                      ToolTip.Tip="Click here, then press the key to repeat. Hold Ctrl, Shift, Alt or Win while pressing it to add them.">
                 <TextBlock x:Name="KeyCaptureText" Text="Click here, then press a key"
                            HorizontalAlignment="Center" Opacity="0.6" />
               </Border>
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="With:" Classes="label" Margin="0,12,10,0" />
               <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="0,12,0,0">
-                <CheckBox x:Name="ModCtrl" Content="Ctrl" />
-                <CheckBox x:Name="ModShift" Content="Shift" />
-                <CheckBox x:Name="ModAlt" Content="Alt" />
-                <CheckBox x:Name="ModMeta" Content="Win" />
+                <CheckBox x:Name="ModCtrl" Content="Ctrl" ToolTip.Tip="Holds Ctrl down around each key press." />
+                <CheckBox x:Name="ModShift" Content="Shift" ToolTip.Tip="Holds Shift down around each key press." />
+                <CheckBox x:Name="ModAlt" Content="Alt" ToolTip.Tip="Holds this modifier down around each key press." />
+                <CheckBox x:Name="ModMeta" Content="Win" ToolTip.Tip="Holds this modifier down around each key press." />
               </StackPanel>
 
               <TextBlock Grid.Row="2" Grid.Column="0" Text="Hold for:" Classes="label" Margin="0,12,10,0" />
               <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,12,0,0">
                 <NumericUpDown x:Name="HoldMs" Width="90" Minimum="0" Maximum="10000" Value="30"
-                               Increment="10" FormatString="0" />
+                               Increment="10" FormatString="0"
+                               ToolTip.Tip="How long the key stays down for each press, in ms. Games often need 20 ms or more to notice it." />
                 <TextBlock Text="ms" Classes="unit" />
               </StackPanel>
             </Grid>
@@ -164,19 +181,24 @@
           <TextBlock Text="Macro" Classes="sectionTitle" />
           <Border Classes="card">
             <StackPanel Spacing="8">
-              <StackPanel Orientation="Horizontal" Spacing="10">
-                <Button x:Name="RecordButton" Content="Record" Width="104" />
-                <TextBlock x:Name="MacroSummary" Classes="unit" VerticalAlignment="Center" Text="No steps yet." />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button x:Name="RecordButton" Content="Record" Width="104"
+                        ToolTip.Tip="Records your real clicks, drags and key presses as steps, added at the end. Press the start/stop key to finish." />
+                <Button x:Name="StepUndoButton" Content="Undo" Width="66" Margin="10,0,0,0" ToolTip.Tip="Undoes the last change to the lines (Ctrl+Z)." />
+                <Button x:Name="StepRedoButton" Content="Redo" Width="66" ToolTip.Tip="Does again what Undo took back (Ctrl+Y)." />
               </StackPanel>
 
-              <ListBox x:Name="StepList" Height="230" Classes="steps" />
+              <TextBlock x:Name="MacroSummary" Classes="unit" Margin="2,0,0,0" Text="No steps yet." TextWrapping="Wrap" />
+
+              <ListBox x:Name="StepList" Height="230" Classes="steps"
+                       ToolTip.Tip="The macro's lines, run from top to bottom. Double-click a line to change it." />
 
               <StackPanel Orientation="Horizontal" Spacing="6">
-                <Button x:Name="StepUpButton" Content="Up" Width="54" />
-                <Button x:Name="StepDownButton" Content="Down" Width="66" />
+                <Button x:Name="StepUpButton" Content="Up" Width="54" ToolTip.Tip="Moves the selected line up one place." />
+                <Button x:Name="StepDownButton" Content="Down" Width="66" ToolTip.Tip="Moves the selected line down one place." />
                 <Button x:Name="StepDeleteButton" Content="Delete" Width="72"
                         ToolTip.Tip="Deletes the selected line. On an If, While or For (or its End), the whole block's frame goes, and the lines inside it stay." />
-                <Button x:Name="StepClearButton" Content="Clear" Width="64" />
+                <Button x:Name="StepClearButton" Content="Clear" Width="64" ToolTip.Tip="Removes every line. Undo brings them back." />
                 <Button x:Name="MacroSaveButton" Content="Save…" Width="78" Margin="12,0,0,0" Classes="accent"
                         ToolTip.Tip="Saves this macro under a name, in Saved macros below." />
               </StackPanel>
@@ -185,7 +207,8 @@
                 <StackPanel Spacing="8">
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="Add:" Classes="label" Margin="0" />
-                    <ComboBox x:Name="StepTypeBox" Width="140" SelectedIndex="0" MaxDropDownHeight="420">
+                    <ComboBox x:Name="StepTypeBox" Width="140" SelectedIndex="0" MaxDropDownHeight="420"
+                              ToolTip.Tip="The kind of line to add. Its settings show below.">
                       <ComboBoxItem>Click</ComboBoxItem>
                       <ComboBoxItem>Drag</ComboBoxItem>
                       <ComboBoxItem>Key</ComboBoxItem>
@@ -195,43 +218,62 @@
                       <ComboBoxItem>Else</ComboBoxItem>
                       <ComboBoxItem>While</ComboBoxItem>
                       <ComboBoxItem>For</ComboBoxItem>
-                      <ComboBoxItem>Go to line</ComboBoxItem>
+                      <ComboBoxItem>Go to</ComboBoxItem>
                       <ComboBoxItem>Stop macro</ComboBoxItem>
                     </ComboBox>
                     <Button x:Name="StepAddButton" Content="Add" Width="70" Classes="accent"
                             ToolTip.Tip="Adds it below the selected line (or at the end). If, While and For come with their End line." />
-                    <Button x:Name="StepReplaceButton" Content="Replace" Width="86" />
+                    <Button x:Name="StepReplaceButton" Content="Replace" Width="86"
+                            ToolTip.Tip="Puts these settings in place of the selected line." />
                   </StackPanel>
 
                   <StackPanel x:Name="StepClickPanel" Spacing="6">
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                      <ComboBox x:Name="StepClickButtonBox" Width="88" SelectedIndex="0">
+                      <ComboBox x:Name="StepClickButtonBox" Width="88" SelectedIndex="0" ToolTip.Tip="Which mouse button to click.">
                         <ComboBoxItem>Left</ComboBoxItem>
                         <ComboBoxItem>Right</ComboBoxItem>
                         <ComboBoxItem>Middle</ComboBoxItem>
                       </ComboBox>
-                      <ComboBox x:Name="StepClickTypeBox" Width="94" SelectedIndex="0">
+                      <ComboBox x:Name="StepClickTypeBox" Width="94" SelectedIndex="0" ToolTip.Tip="Single or double click.">
                         <ComboBoxItem>Single</ComboBoxItem>
                         <ComboBoxItem>Double</ComboBoxItem>
                       </ComboBox>
-                      <TextBlock Text="X" Classes="unit" Margin="4,0,2,0" />
-                      <NumericUpDown x:Name="StepClickX" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
+                      <TextBlock Text="at" Classes="unit" Margin="4,0,2,0" />
+                      <ComboBox x:Name="StepClickAimBox" Width="150" SelectedIndex="0"
+                                ToolTip.Tip="A spot: always the same X and Y. A screen check: wherever the check finds its target when the line runs.">
+                        <ComboBoxItem>A spot</ComboBoxItem>
+                        <ComboBoxItem>A screen check</ComboBoxItem>
+                      </ComboBox>
+                    </StackPanel>
+                    <StackPanel x:Name="StepClickSpotRow" Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="X" Classes="unit" Margin="0,0,2,0" />
+                      <NumericUpDown x:Name="StepClickX" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                                     ToolTip.Tip="Across the screen, in pixels from the left." />
                       <TextBlock Text="Y" Classes="unit" Margin="4,0,2,0" />
-                      <NumericUpDown x:Name="StepClickY" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
-                      <Button x:Name="StepClickPick" Content="Pick" Width="58" />
+                      <NumericUpDown x:Name="StepClickY" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                                     ToolTip.Tip="Down the screen, in pixels from the top." />
+                      <Button x:Name="StepClickPick" Content="Pick" Width="58"
+                              ToolTip.Tip="Hides the windows; the spot under the mouse is taken when the countdown by the mouse ends." />
+                    </StackPanel>
+                    <StackPanel x:Name="StepClickCheckRow" Orientation="Horizontal" Spacing="8" IsVisible="False">
+                      <Button x:Name="StepClickCheckButton" Content="Screen check…"
+                              ToolTip.Tip="Sets up what to look for, where, and which spot of it to click." />
+                      <TextBlock x:Name="StepClickCheckText" Classes="unit" Margin="0" MaxWidth="320" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                      <ComboBox x:Name="StepPressBox" Width="130" SelectedIndex="0">
+                      <ComboBox x:Name="StepPressBox" Width="130" SelectedIndex="0"
+                                ToolTip.Tip="A full click holds the button down briefly, like pressing it. A half click lets go instantly, like a light tap.">
                         <ComboBoxItem>Full click</ComboBoxItem>
                         <ComboBoxItem>Half click</ComboBoxItem>
                       </ComboBox>
                       <TextBlock x:Name="StepHoldLabel" Text="held for" Classes="unit" Margin="4,0,2,0" />
-                      <ComboBox x:Name="StepHoldBox" Width="110" SelectedIndex="0" />
+                      <ComboBox x:Name="StepHoldBox" Width="110" SelectedIndex="0" ToolTip.Tip="How long the button stays down for the click. Custom… takes any time from 0 to 1000 ms." />
                       <Button x:Name="StepHoldHelp" Classes="help" Content="?" />
                     </StackPanel>
                     <StackPanel x:Name="StepHoldCustomRow" Orientation="Horizontal" Spacing="6" IsVisible="False">
                       <TextBlock Text="Hold" Classes="unit" Margin="0" />
-                      <NumericUpDown x:Name="StepHoldCustom" Width="96" Minimum="0" Maximum="1000" Value="20" Increment="1" FormatString="0" />
+                      <NumericUpDown x:Name="StepHoldCustom" Width="96" Minimum="0" Maximum="1000" Value="20" Increment="1" FormatString="0"
+                                     ToolTip.Tip="Hold time in ms. Under 17 ms (one frame at 60 fps) many apps see it as a half click." />
                       <TextBlock Text="ms" Classes="unit" Margin="0" />
                       <TextBlock x:Name="StepHoldHalfNote" Text="(counts as a half click)" Classes="unit" Margin="6,0,0,0" IsVisible="False" />
                     </StackPanel>
@@ -239,58 +281,99 @@
 
                   <StackPanel x:Name="StepDragPanel" Spacing="6" IsVisible="False">
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                      <TextBlock Text="From" Classes="unit" Margin="0,0,2,0" />
-                      <NumericUpDown x:Name="StepDragFromX" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
-                      <NumericUpDown x:Name="StepDragFromY" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
-                      <Button x:Name="StepDragFromPick" Content="Pick" Width="58" />
-                      <ComboBox x:Name="StepDragButtonBox" Width="88" SelectedIndex="0" Margin="8,0,0,0">
+                      <TextBlock Text="From" Classes="unit" Width="34" Margin="0" />
+                      <ComboBox x:Name="StepDragFromAimBox" Width="150" SelectedIndex="0"
+                                ToolTip.Tip="A spot: always the same X and Y. A screen check: wherever the check finds its target when the line runs.">
+                        <ComboBoxItem>A spot</ComboBoxItem>
+                        <ComboBoxItem>A screen check</ComboBoxItem>
+                      </ComboBox>
+                      <StackPanel x:Name="StepDragFromSpotRow" Orientation="Horizontal" Spacing="6">
+                        <NumericUpDown x:Name="StepDragFromX" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                                       ToolTip.Tip="Where the drag starts: across the screen, in pixels from the left." />
+                        <NumericUpDown x:Name="StepDragFromY" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                                       ToolTip.Tip="Where the drag starts: down the screen, in pixels from the top." />
+                        <Button x:Name="StepDragFromPick" Content="Pick" Width="58"
+                                ToolTip.Tip="Hides the windows; the spot under the mouse is taken when the countdown by the mouse ends." />
+                      </StackPanel>
+                      <StackPanel x:Name="StepDragFromCheckRow" Orientation="Horizontal" Spacing="8" IsVisible="False">
+                        <Button x:Name="StepDragFromCheckButton" Content="Screen check…"
+                                ToolTip.Tip="Sets up what to look for, where, and which spot of it the drag starts at." />
+                        <TextBlock x:Name="StepDragFromCheckText" Classes="unit" Margin="0" MaxWidth="150" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="To" Classes="unit" Width="34" Margin="0" />
+                      <ComboBox x:Name="StepDragToAimBox" Width="150" SelectedIndex="0"
+                                ToolTip.Tip="A spot: always the same X and Y. A screen check: wherever the check finds its target when the line runs.">
+                        <ComboBoxItem>A spot</ComboBoxItem>
+                        <ComboBoxItem>A screen check</ComboBoxItem>
+                      </ComboBox>
+                      <StackPanel x:Name="StepDragToSpotRow" Orientation="Horizontal" Spacing="6">
+                        <NumericUpDown x:Name="StepDragToX" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                                       ToolTip.Tip="Where the drag ends: across the screen, in pixels from the left." />
+                        <NumericUpDown x:Name="StepDragToY" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0"
+                                       ToolTip.Tip="Where the drag ends: down the screen, in pixels from the top." />
+                        <Button x:Name="StepDragToPick" Content="Pick" Width="58"
+                                ToolTip.Tip="Hides the windows; the spot under the mouse is taken when the countdown by the mouse ends." />
+                      </StackPanel>
+                      <StackPanel x:Name="StepDragToCheckRow" Orientation="Horizontal" Spacing="8" IsVisible="False">
+                        <Button x:Name="StepDragToCheckButton" Content="Screen check…"
+                                ToolTip.Tip="Sets up what to look for, where, and which spot of it the drag ends at." />
+                        <TextBlock x:Name="StepDragToCheckText" Classes="unit" Margin="0" MaxWidth="150" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <ComboBox x:Name="StepDragButtonBox" Width="88" SelectedIndex="0" ToolTip.Tip="Which mouse button is held down during the drag.">
                         <ComboBoxItem>Left</ComboBoxItem>
                         <ComboBoxItem>Right</ComboBoxItem>
                         <ComboBoxItem>Middle</ComboBoxItem>
                       </ComboBox>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <TextBlock Text="To" Classes="unit" Margin="0,0,2,0" />
-                      <NumericUpDown x:Name="StepDragToX" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
-                      <NumericUpDown x:Name="StepDragToY" Width="76" Minimum="-32000" Maximum="32000" Value="0" FormatString="0" />
-                      <Button x:Name="StepDragToPick" Content="Pick" Width="58" />
                       <TextBlock Text="over" Classes="unit" Margin="8,0,2,0" />
                       <NumericUpDown x:Name="StepDragDuration" Width="80" Minimum="10" Maximum="60000" Value="400"
-                                     Increment="50" FormatString="0" />
+                                     Increment="50" FormatString="0"
+                                     ToolTip.Tip="How long the cursor takes to travel from start to end, in ms." />
                       <TextBlock Text="ms" Classes="unit" />
                     </StackPanel>
                   </StackPanel>
 
+                  <TextBlock x:Name="StepAimTip" Classes="tip" IsVisible="False" MaxWidth="470"
+                             Text="If the screen check finds nothing, this line is skipped. Tip: put it inside an If or While that checks the same thing, so it only runs when the target is there." />
+
                   <StackPanel x:Name="StepKeyPanel" Spacing="6" IsVisible="False">
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                      <Border x:Name="StepKeyCapture" Classes="keyCapture" Focusable="True" MinWidth="150">
+                      <Border x:Name="StepKeyCapture" Classes="keyCapture" Focusable="True" MinWidth="150"
+                              ToolTip.Tip="Click here, then press the key. Hold Ctrl, Shift, Alt or Win while pressing it to add them.">
                         <TextBlock x:Name="StepKeyCaptureText" Text="Click here, then press a key"
                                    HorizontalAlignment="Center" Opacity="0.6" />
                       </Border>
-                      <CheckBox x:Name="StepModCtrl" Content="Ctrl" />
-                      <CheckBox x:Name="StepModShift" Content="Shift" />
-                      <CheckBox x:Name="StepModAlt" Content="Alt" />
-                      <CheckBox x:Name="StepModMeta" Content="Win" />
+                      <CheckBox x:Name="StepModCtrl" Content="Ctrl" ToolTip.Tip="Holds Ctrl down around the key press." />
+                      <CheckBox x:Name="StepModShift" Content="Shift" ToolTip.Tip="Holds Shift down around the key press." />
+                      <CheckBox x:Name="StepModAlt" Content="Alt" ToolTip.Tip="Holds this modifier down around the key press." />
+                      <CheckBox x:Name="StepModMeta" Content="Win" ToolTip.Tip="Holds this modifier down around the key press." />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="6">
                       <TextBlock Text="Hold" Classes="unit" Margin="0,0,2,0" />
                       <NumericUpDown x:Name="StepKeyHold" Width="80" Minimum="0" Maximum="10000" Value="0"
-                                     Increment="10" FormatString="0" />
+                                     Increment="10" FormatString="0"
+                                     ToolTip.Tip="How long the key stays down, in ms. 0 lets go straight away." />
                       <TextBlock Text="ms" Classes="unit" />
                     </StackPanel>
                   </StackPanel>
 
                   <StackPanel x:Name="StepWaitPanel" Orientation="Horizontal" Spacing="6" IsVisible="False">
                     <NumericUpDown x:Name="StepWaitMs" Width="100" Minimum="1" Maximum="600000" Value="500"
-                                   Increment="100" FormatString="0" />
+                                   Increment="100" FormatString="0"
+                                   ToolTip.Tip="How long to do nothing before the next line, in ms. Pausing holds the wait; Go to line cuts it short." />
                     <TextBlock Text="ms" Classes="unit" />
                   </StackPanel>
 
                   <StackPanel x:Name="StepForPanel" Orientation="Horizontal" Spacing="6" IsVisible="False">
                     <TextBlock Text="For" Classes="unit" Margin="0,0,2,0" />
                     <NumericUpDown x:Name="StepForAmount" Width="90" Minimum="0" Maximum="10000000" Value="10"
-                                   Increment="1" FormatString="0.##" />
-                    <ComboBox x:Name="StepForUnit" Width="100" SelectedIndex="0">
+                                   Increment="1" FormatString="0.##"
+                                   ToolTip.Tip="How many rounds, or how many seconds, the lines up to End for repeat." />
+                    <ComboBox x:Name="StepForUnit" Width="100" SelectedIndex="0"
+                              ToolTip.Tip="Times: a set number of rounds. Seconds: rounds until the time is up; the round in progress always finishes.">
                       <ComboBoxItem>times</ComboBoxItem>
                       <ComboBoxItem>seconds</ComboBoxItem>
                     </ComboBox>
@@ -298,7 +381,8 @@
 
                   <StackPanel x:Name="StepGoToPanel" Orientation="Horizontal" Spacing="6" IsVisible="False">
                     <TextBlock Text="Go to line" Classes="unit" Margin="0,0,2,0" />
-                    <NumericUpDown x:Name="StepGoToLine" Width="80" Minimum="1" Maximum="100000" Value="1" FormatString="0" />
+                    <NumericUpDown x:Name="StepGoToLine" Width="80" Minimum="1" Maximum="100000" Value="1" FormatString="0"
+                                   ToolTip.Tip="The line to carry on from. It follows that line if lines are moved, added or deleted." />
                   </StackPanel>
 
                   <TextBlock x:Name="StepControlHint" IsVisible="False" TextWrapping="Wrap" Classes="hint" MaxWidth="470" />
@@ -315,12 +399,13 @@
             <StackPanel Spacing="8">
               <TextBlock x:Name="LibraryEmpty" Classes="hint" TextWrapping="Wrap"
                          Text="No saved macros yet. Build one above and press Save…, or import a macro file." />
-              <ListBox x:Name="LibraryList" Height="120" />
+              <ListBox x:Name="LibraryList" Height="120"
+                       ToolTip.Tip="Your saved macros. Double-click one to load it." />
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <Button x:Name="LibraryLoadButton" Content="Load" Width="64"
-                        ToolTip.Tip="Opens the selected macro above, in place of the one there now." />
-                <Button x:Name="LibraryRenameButton" Content="Rename…" />
-                <Button x:Name="LibraryDeleteButton" Content="Delete" />
+                        ToolTip.Tip="Opens the selected macro above, in place of the one there now. Undo brings the old one back." />
+                <Button x:Name="LibraryRenameButton" Content="Rename…" ToolTip.Tip="Gives the selected macro a new name." />
+                <Button x:Name="LibraryDeleteButton" Content="Delete" ToolTip.Tip="Removes the selected macro from this list, for good. Asks first." />
                 <Button x:Name="LibraryDownloadButton" Content="Download…" Margin="12,0,0,0"
                         ToolTip.Tip="Saves a copy of the selected macro as a file wherever you choose, to keep or share." />
                 <Button x:Name="LibraryImportButton" Content="Import…"
@@ -341,13 +426,13 @@
             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="Every:" Classes="label" />
               <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                <NumericUpDown x:Name="Hours" Width="60" Minimum="0" Maximum="23" Value="0" FormatString="0" />
+                <NumericUpDown x:Name="Hours" Width="60" Minimum="0" Maximum="23" Value="0" FormatString="0" ToolTip.Tip="Hours between repeats." />
                 <TextBlock Text="h" Classes="unit" />
-                <NumericUpDown x:Name="Minutes" Width="60" Minimum="0" Maximum="59" Value="0" FormatString="0" />
+                <NumericUpDown x:Name="Minutes" Width="60" Minimum="0" Maximum="59" Value="0" FormatString="0" ToolTip.Tip="Minutes between repeats." />
                 <TextBlock Text="m" Classes="unit" />
-                <NumericUpDown x:Name="Seconds" Width="60" Minimum="0" Maximum="59" Value="0" FormatString="0" />
+                <NumericUpDown x:Name="Seconds" Width="60" Minimum="0" Maximum="59" Value="0" FormatString="0" ToolTip.Tip="Seconds between repeats." />
                 <TextBlock Text="s" Classes="unit" />
-                <NumericUpDown x:Name="Millis" Width="68" Minimum="0" Maximum="999" Value="100" Increment="10" FormatString="0" />
+                <NumericUpDown x:Name="Millis" Width="68" Minimum="0" Maximum="999" Value="100" Increment="10" FormatString="0" ToolTip.Tip="Milliseconds between repeats. For a macro, the time between the end of one pass and the start of the next." />
                 <TextBlock Text="ms" Classes="unit" Margin="4,0,0,0" />
               </StackPanel>
 
@@ -355,16 +440,20 @@
               <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,12,0,0">
                 <TextBlock Text="±" Classes="unit" Margin="0,0,6,0" />
                 <NumericUpDown x:Name="Jitter" Width="90" Minimum="0" Maximum="100000" Value="0"
-                               Increment="10" FormatString="0" />
+                               Increment="10" FormatString="0"
+                               ToolTip.Tip="Makes each gap up to this many ms shorter or longer, at random, so the timing looks less mechanical." />
                 <TextBlock Text="ms" Classes="unit" />
               </StackPanel>
 
               <TextBlock Grid.Row="2" Grid.Column="0" Text="Repeat:" Classes="label" Margin="0,12,10,0" />
               <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,12,0,0">
                 <RadioButton x:Name="RepeatForever" GroupName="Repeat" Content="Until stopped"
-                             IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0" />
-                <RadioButton x:Name="RepeatLimited" GroupName="Repeat" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <NumericUpDown x:Name="RepeatCount" Width="104" Minimum="1" Maximum="10000000" Value="10" FormatString="0" />
+                             IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0"
+                             ToolTip.Tip="Keeps going until you press Stop or the start/stop key." />
+                <RadioButton x:Name="RepeatLimited" GroupName="Repeat" VerticalAlignment="Center" Margin="0,0,6,0"
+                             ToolTip.Tip="Stops by itself after this many times." />
+                <NumericUpDown x:Name="RepeatCount" Width="104" Minimum="1" Maximum="10000000" Value="10" FormatString="0"
+                               ToolTip.Tip="How many times (or macro passes) before it stops by itself." />
                 <TextBlock x:Name="RepeatUnit" Text="times" Classes="unit" />
               </StackPanel>
             </Grid>
@@ -378,12 +467,24 @@
             <StackPanel Spacing="10">
               <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Start/stop key:" Classes="label" />
-                <ComboBox x:Name="HotkeyBox" Width="92" SelectedIndex="5" />
-                <CheckBox x:Name="TopMostBox" Content="Keep window on top" Margin="24,0,0,0" />
+                <ComboBox x:Name="HotkeyBox" Width="92" SelectedIndex="5"
+                          ToolTip.Tip="Starts and stops the setup shown in the window from any window, straight away (no start delay)." />
+                <CheckBox x:Name="TopMostBox" Content="Keep window on top" Margin="24,0,0,0"
+                          ToolTip.Tip="Keeps this window above every other window." />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Start delay:" Classes="label" />
+                <NumericUpDown x:Name="StartDelayBox" Width="56" Minimum="0" Maximum="60" Value="3" FormatString="0"
+                               ToolTip.Tip="After pressing Start, how many seconds to wait before the first click or key, so you can switch to your target window. 0 starts at once." />
+                <TextBlock Text="s" Classes="unit" />
+                <TextBlock Text="Resume delay:" Classes="label" Margin="14,0,10,0" />
+                <NumericUpDown x:Name="ResumeDelayBox" Width="56" Minimum="0" Maximum="60" Value="0" FormatString="0"
+                               ToolTip.Tip="After Resume (the button or a pause key), how many seconds to wait before carrying on. 0 carries on at once." />
+                <TextBlock Text="s" Classes="unit" />
               </StackPanel>
               <StackPanel Orientation="Horizontal">
                 <CheckBox x:Name="LagCheckBox" Content="Slow down when lagging" IsChecked="True"
-                          ToolTip.Tip="Watches for your computer or the app you're automating falling behind, and slows down until it recovers." />
+                          ToolTip.Tip="Watches for your computer or the app you're automating falling behind, and slows down until it recovers. Time a macro spends only waiting or checking the screen isn't judged." />
                 <CheckBox x:Name="LagNotifyBox" Content="Notify me when it slows down" IsChecked="True" Margin="16,0,0,0"
                           ToolTip.Tip="Sends a system notification when it slows down for lag and when it's back to full speed." />
               </StackPanel>
@@ -396,8 +497,9 @@
                           ToolTip.Tip="While picking a spot, a left click takes it at once instead of waiting for the countdown. That click doesn't reach whatever is under the mouse." />
               </StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="10">
-                <Button x:Name="UpdateButton" Content="Check for updates" MinWidth="150" />
-                <Button x:Name="WhatsNewButton" Content="What's new" />
+                <Button x:Name="UpdateButton" Content="Check for updates" MinWidth="150"
+                        ToolTip.Tip="Looks for a newer version. If there is one, this button installs it and restarts, keeping your settings and macros." />
+                <Button x:Name="WhatsNewButton" Content="What's new" ToolTip.Tip="Shows what changed in each version." />
                 <TextBlock x:Name="VersionText" Classes="unit" VerticalAlignment="Center" />
               </StackPanel>
             </StackPanel>
@@ -410,37 +512,58 @@
           <Border x:Name="BindingsCard" Classes="card">
             <StackPanel Spacing="8">
               <TextBlock x:Name="BindingsEmpty" Classes="unit" Margin="0" TextWrapping="Wrap"
-                         Text="Give a setup its own key: set it up above, pick a key below, then Add. Its key starts and stops it from any window." />
-              <ListBox x:Name="BindingList" Height="96" />
+                         Text="Give a setup its own key, or make keys that pause, step or move the window's macro. Choose below, then Add." />
+              <ListBox x:Name="BindingList" Height="96"
+                       ToolTip.Tip="Your key bindings. They work from any window while Auto Clicker is open." />
               <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBox x:Name="BindingName" Width="120" Watermark="Name" MaxLength="40" />
-                <Border x:Name="BindingKeyCapture" Classes="keyCapture" Focusable="True" MinWidth="130"
-                        ToolTip.Tip="Click here, then press a key or a combination such as Ctrl+1.">
-                  <TextBlock x:Name="BindingKeyText" Text="Click to set key" Opacity="0.6" />
-                </Border>
+                <TextBlock Text="Does:" Classes="label" Margin="0,0,2,0" />
+                <ComboBox x:Name="BindingActionBox" Width="210" SelectedIndex="0"
+                          ToolTip.Tip="Start/stop: runs the setup saved with it. Pause / resume, Step one line and Go to (a line) control the run started from the window.">
+                  <ComboBoxItem>Start/stop a setup</ComboBoxItem>
+                  <ComboBoxItem>Pause / resume</ComboBoxItem>
+                  <ComboBoxItem>Step one line</ComboBoxItem>
+                  <ComboBoxItem>Go to</ComboBoxItem>
+                </ComboBox>
+                <TextBlock x:Name="BindingLineLabel" Text="line" Classes="unit" Margin="0,0,0,0" IsVisible="False" />
+                <NumericUpDown x:Name="BindingLine" Width="80" Minimum="1" Maximum="100000" Value="1" FormatString="0" IsVisible="False"
+                               ToolTip.Tip="The line of the window's macro to carry on from. If the macro isn't running, the key starts it from this line." />
                 <CheckBox x:Name="BindingAlongside" Content="Run alongside others"
                           ToolTip.Tip="On: its key starts it even while something else runs. Off: it stops whatever is running first. When two runs both use the mouse, they take turns." />
               </StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBox x:Name="BindingName" Width="120" Watermark="Name" MaxLength="40"
+                         ToolTip.Tip="An optional name, shown in the list and in notifications." />
+                <Border x:Name="BindingKeyCapture" Classes="keyCapture" Focusable="True" MinWidth="130"
+                        ToolTip.Tip="Click here, then press a key or a combination such as Ctrl+1.">
+                  <TextBlock x:Name="BindingKeyText" Text="Click to set key" Opacity="0.6" />
+                </Border>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="6">
                 <Button x:Name="BindingAddButton" Content="Add current setup"
-                        ToolTip.Tip="Saves everything set up on the left and in Timing under this name and key." />
+                        ToolTip.Tip="Saves a new binding with this name, key and action. For Start/stop it saves everything set up on the left and in Timing." />
                 <Button x:Name="BindingReplaceButton" Content="Replace"
-                        ToolTip.Tip="Replaces the selected binding with the current setup, name, key and option." />
+                        ToolTip.Tip="Replaces the selected binding with the current name, key, action and (for Start/stop) setup." />
                 <Button x:Name="BindingLoadButton" Content="Load into window"
                         ToolTip.Tip="Shows the selected binding's setup on the left and in Timing, to change it. Use Replace to save the changes." />
-                <Button x:Name="BindingRemoveButton" Content="Remove" />
+                <Button x:Name="BindingRemoveButton" Content="Remove" ToolTip.Tip="Deletes the selected binding and frees its key." />
               </StackPanel>
             </StackPanel>
           </Border>
         </StackPanel>
 
-        <Grid ColumnDefinitions="*,12,*" Margin="0,4,0,0">
+        <Grid ColumnDefinitions="*,8,*,8,*" Margin="0,4,0,0">
           <Button x:Name="StartButton" Grid.Column="0" Content="Start" Height="42"
                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                  FontWeight="SemiBold" Classes="accent" />
-          <Button x:Name="StopButton" Grid.Column="2" Content="Stop" Height="42"
+                  FontWeight="SemiBold" Classes="accent"
+                  ToolTip.Tip="Starts after the start delay (set in Options), so you can switch to your target window." />
+          <Button x:Name="PauseButton" Grid.Column="2" Content="Pause" Height="42"
                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                  FontWeight="SemiBold" IsEnabled="False" />
+                  FontWeight="SemiBold" IsEnabled="False"
+                  ToolTip.Tip="Holds the run between steps (never halfway through a click or key press). Resume carries on after the resume delay." />
+          <Button x:Name="StopButton" Grid.Column="4" Content="Stop" Height="42"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  FontWeight="SemiBold" IsEnabled="False"
+                  ToolTip.Tip="Stops the window's run and every running key binding." />
         </Grid>
 
         <TextBlock x:Name="StatusText" TextWrapping="Wrap" Opacity="0.75" Text="Ready." />

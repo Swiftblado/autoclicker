@@ -102,6 +102,29 @@ public sealed class LagGovernor
     /// <summary>The multiplier that last ran into lag; 0 when none has.</summary>
     double laggedAt;
 
+    bool quiet;
+    /// <summary>Whether the run was sending input (not <see cref="Quiet"/>) at any point in this window.</summary>
+    bool activeInWindow = true;
+
+    /// <summary>
+    /// Set while a macro is only waiting, looking at the screen or paused: it sends no input then,
+    /// so there's nothing to slow down, and the target going still (or the computer working hard
+    /// on a screen check) isn't lag it caused. A window spent wholly quiet isn't judged, and what
+    /// "lively" looks like on screen is learned again once input starts.
+    /// </summary>
+    public bool Quiet
+    {
+        get { lock (gate) return quiet; }
+        set
+        {
+            lock (gate)
+            {
+                quiet = value;
+                if (!value) activeInWindow = true;
+            }
+        }
+    }
+
     /// <summary>1 at full speed; 2 means each cycle takes twice as long, and so on.</summary>
     public double Multiplier { get { lock (gate) return multiplier; } }
 
@@ -134,6 +157,19 @@ public sealed class LagGovernor
     {
         lock (gate)
         {
+            bool judge = activeInWindow;
+            activeInWindow = !quiet;
+            if (!judge)
+            {
+                // Nothing was sent: no evidence either way, and the screen's normal liveliness
+                // has to be learned again, since the target may have gone still meanwhile.
+                ClearWindow();
+                recentLiveliness.Clear();
+                windowsSinceLively = int.MaxValue;
+                badStreak = 0;
+                return LagChange.None;
+            }
+
             var (reason, frozen) = JudgeWindow();
             ClearWindow();
             if (windowsSinceSlowed != int.MaxValue) windowsSinceSlowed++;
@@ -254,6 +290,8 @@ public sealed class LagGovernor
             windowsSinceSlowed = int.MaxValue;
             laggedAt = 0;
             Reason = "";
+            quiet = false;
+            activeInWindow = true;
         }
     }
 }

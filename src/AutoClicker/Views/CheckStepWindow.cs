@@ -39,41 +39,59 @@ sealed class CheckStepWindow : Window
         IsAlphaVisible = false,
         IsColorPaletteVisible = false
     };
-    readonly Button colorDropper = new() { Content = "Dropper", Width = 90 };
+    readonly Button colorDropper = new() { Content = "Dropper", Width = 90, [ToolTip.TipProperty] = "Hides the windows; hover over any pixel and its color (and spot) is taken when the countdown by the mouse ends." };
     readonly StackPanel colorPanel = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
 
     readonly ObservableCollection<ColorPoint> points = [];
-    readonly ListBox pointList = new() { Height = 120 };
+    readonly ListBox pointList = new() { Height = 120, [ToolTip.TipProperty] = "The colors to look for, each at its spot. Select one to see it below." };
     readonly NumericUpDown pointX = Number(-32000, 32000, 0, 76);
     readonly NumericUpDown pointY = Number(-32000, 32000, 0, 76);
     readonly TextBox pointHex = new() { Width = 96, Watermark = "#RRGGBB" };
-    readonly Button pointPick = new() { Content = "Pick & add", Width = 100 };
-    readonly Button pointAdd = new() { Content = "Add", Width = 60 };
-    readonly Button pointRemove = new() { Content = "Remove", Width = 80 };
+    readonly Button pointPick = new() { Content = "Pick & add", Width = 100, [ToolTip.TipProperty] = "Hides the windows; the spot under the mouse and its color are added when the countdown ends." };
+    readonly Button pointAdd = new() { Content = "Add", Width = 60, [ToolTip.TipProperty] = "Adds the X, Y and color typed to the left." };
+    readonly Button pointRemove = new() { Content = "Remove", Width = 80, [ToolTip.TipProperty] = "Removes the selected point." };
     readonly StackPanel colorsPanel = new() { Spacing = 6 };
 
     ImageTemplate? image;
     readonly Image imagePreview = new() { MaxWidth = 220, MaxHeight = 120, Stretch = Stretch.Uniform };
     readonly TextBlock imageInfo = new() { Opacity = 0.8, VerticalAlignment = VerticalAlignment.Center };
-    readonly Button imageCapture = new() { Content = "Capture from screen…", Width = 170 };
-    readonly Button imageLoad = new() { Content = "Load PNG…", Width = 100 };
+    readonly Button imageCapture = new() { Content = "Capture from screen…", Width = 170, [ToolTip.TipProperty] = "Hides the windows; drag a box around what to look for, and that part of the screen becomes the image." };
+    readonly Button imageLoad = new() { Content = "Load PNG…", Width = 100, [ToolTip.TipProperty] = "Uses a picture file. Transparent parts of a PNG don't have to match." };
     readonly StackPanel imagePanel = new() { Spacing = 6 };
 
     // Where
-    readonly ComboBox whereBox = new() { Width = 250 };
+    readonly ComboBox whereBox = new() { Width = 250, [ToolTip.TipProperty] = "Where on the screen to look. A smaller area is found faster." };
     readonly NumericUpDown atX = Number(-32000, 32000, 0, 76);
     readonly NumericUpDown atY = Number(-32000, 32000, 0, 76);
-    readonly Button atPick = new() { Content = "Pick", Width = 60 };
+    readonly Button atPick = new() { Content = "Pick", Width = 60, [ToolTip.TipProperty] = "Hides the windows; the spot under the mouse is taken when the countdown ends." };
     readonly StackPanel atRow = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
     readonly NumericUpDown areaX = Number(-32000, 32000, 0, 70);
     readonly NumericUpDown areaY = Number(-32000, 32000, 0, 70);
     readonly NumericUpDown areaW = Number(1, 32000, 200, 70);
     readonly NumericUpDown areaH = Number(1, 32000, 200, 70);
-    readonly Button areaDrag = new() { Content = "Drag area…", Width = 100 };
+    readonly Button areaDrag = new() { Content = "Drag area…", Width = 100, [ToolTip.TipProperty] = "Hides the windows; drag a box over the screen to set where to look." };
     readonly StackPanel areaRow = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
     readonly NumericUpDown tolerance = Number(0, 255, ColorMatch.DefaultTolerance, 60);
 
-    readonly Button testButton = new() { Content = "Test now", Width = 90 };
+    // Click at (only when the check aims a click or drag)
+    readonly bool aim;
+    readonly ComboBox spotBox = new()
+    {
+        Width = 300, SelectedIndex = 0,
+        ItemsSource = new[] { "Its exact center", "Its center, moved by pixels", "Its center, moved by a share of its size" },
+        [ToolTip.TipProperty] = "Which spot of what's found the click goes to."
+    };
+    readonly NumericUpDown offsetX = Number(-32000, 32000, 0, 80);
+    readonly NumericUpDown offsetY = Number(-32000, 32000, 0, 80);
+    readonly TextBlock offsetXUnit = new() { VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8 };
+    readonly TextBlock offsetYUnit = new() { VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8 };
+    readonly StackPanel offsetRow = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
+    readonly TextBlock spotHint = new()
+    {
+        HorizontalAlignment = HorizontalAlignment.Left, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, MaxWidth = 520
+    };
+
+    readonly Button testButton = new() { Content = "Test now", Width = 90, [ToolTip.TipProperty] = "Hides the windows and looks once: says whether it's found right now, where, and how long the search took." };
     readonly TextBlock testResult = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 380 };
     readonly TextBlock problem = new() { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, IsVisible = false };
 
@@ -82,17 +100,19 @@ sealed class CheckStepWindow : Window
 
     /// <summary>
     /// Opens the editor on <paramref name="existing"/> (or a fresh check) and returns the check set
-    /// up, or null if cancelled.
+    /// up, or null if cancelled. With <paramref name="aim"/> the check aims a click or drag, and
+    /// the window also asks which spot of what it finds to use.
     /// </summary>
-    public static Task<MacroStep?> EditAsync(Window owner, IInputBackend backend, MacroStep? existing) =>
-        new CheckStepWindow(owner, backend, existing ?? MacroStep.NewCheck()).ShowDialog<MacroStep?>(owner);
+    public static Task<MacroStep?> EditAsync(Window owner, IInputBackend backend, MacroStep? existing, bool aim = false) =>
+        new CheckStepWindow(owner, backend, existing ?? MacroStep.NewCheck(), aim).ShowDialog<MacroStep?>(owner);
 
-    CheckStepWindow(Window owner, IInputBackend backend, MacroStep step)
+    CheckStepWindow(Window owner, IInputBackend backend, MacroStep step, bool aim)
     {
         this.owner = owner;
         this.backend = backend;
+        this.aim = aim;
 
-        Title = "Screen check";
+        Title = aim ? "Screen check to aim at" : "Screen check";
         Icon = owner.Icon;
         ShowInTaskbar = false;
         CanMinimize = false;
@@ -169,6 +189,18 @@ sealed class CheckStepWindow : Window
                 }
             }
         };
+        ToolTip.SetTip(ok, "Saves this check.");
+        ToolTip.SetTip(cancel, "Closes without saving.");
+        ToolTip.SetTip(targetBox, "A color: one color at a spot or anywhere in an area. Several colors: a set of colors at set spots, or that shape found anywhere. An image: a picture from the screen or a file.");
+        ToolTip.SetTip(hexBox, "The color as a hex code, like #FF8800.");
+        ToolTip.SetTip(tolerance, "How far each of red, green and blue may be off and still count as a match. 0 means the exact color; a little slack catches shading in games.");
+        foreach (var box in new[] { atX, pointX, areaX }) ToolTip.SetTip(box, "Across the screen, in pixels from the left.");
+        foreach (var box in new[] { atY, pointY, areaY }) ToolTip.SetTip(box, "Down the screen, in pixels from the top.");
+        ToolTip.SetTip(areaW, "Width of the area to look in, in pixels.");
+        ToolTip.SetTip(areaH, "Height of the area to look in, in pixels.");
+        ToolTip.SetTip(pointHex, "The point's color as a hex code, like #FF8800.");
+        ToolTip.SetTip(offsetX, "How far right of the center to click; a negative number goes left.");
+        ToolTip.SetTip(offsetY, "How far up from the center to click; a negative number goes down.");
 
         // The buttons stay put; the settings above them scroll if the screen is short.
         var settings = new StackPanel
@@ -188,11 +220,31 @@ sealed class CheckStepWindow : Window
                 whereBox,
                 atRow,
                 areaRow,
-                Row(Label("Tolerance"), tolerance, Hint("0 = exact color; each of red, green, blue may be off by this much.")),
-
-                Hint("A check only says found or not found. Put it in the condition of an If or While to decide what happens.")
+                Row(Label("Tolerance"), tolerance, Hint("0 = exact color; each of red, green, blue may be off by this much."))
             }
         };
+
+        if (aim)
+        {
+            offsetRow.Children.AddRange([Label("X"), offsetX, offsetXUnit, Label("Y"), offsetY, offsetYUnit]);
+            offsetRow.Children[3].Margin = new Thickness(10, 0, 0, 0);
+            settings.Children.AddRange([
+                Section("Click at"),
+                spotBox,
+                offsetRow,
+                spotHint,
+                new TextBlock
+                {
+                    Text = "If it finds nothing, this line is skipped. Tip: put the line inside an If or While that checks the same thing, so it only runs when the target is there.",
+                    Foreground = new SolidColorBrush(Color.Parse("#FBBF24")), TextWrapping = TextWrapping.Wrap, MaxWidth = 520,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                }
+            ]);
+        }
+        else
+        {
+            settings.Children.Add(Hint("A check only says found or not found. Put it in the condition of an If or While to decide what happens."));
+        }
 
         return new DockPanel
         {
@@ -257,6 +309,7 @@ sealed class CheckStepWindow : Window
     {
         targetBox.SelectionChanged += (_, _) => { FillWhereChoices(CheckAreaChosen()); UpdateVisibility(); };
         whereBox.SelectionChanged += (_, _) => UpdateVisibility();
+        spotBox.SelectionChanged += (_, _) => UpdateVisibility();
 
         hexBox.TextChanged += (_, _) =>
         {
@@ -366,6 +419,25 @@ sealed class CheckStepWindow : Window
         imagePanel.IsVisible = target == CheckTarget.Image;
         atRow.IsVisible = target == CheckTarget.Color && where == CheckArea.Point;
         areaRow.IsVisible = where == CheckArea.Area;
+
+        var spot = (CheckSpot)Math.Max(0, spotBox.SelectedIndex);
+        offsetRow.IsVisible = spot != CheckSpot.Center;
+        string unit = spot == CheckSpot.OffsetPercent ? "%" : "px";
+        offsetXUnit.Text = unit + " (+ right)";
+        offsetYUnit.Text = unit + " (+ up)";
+        spotHint.Text = spot switch
+        {
+            CheckSpot.OffsetPercent =>
+                "A share of the size of what's found, from its center: X 100% is its right edge and -100% its left edge; " +
+                "Y 100% is its top edge and -100% its bottom edge. 0% is the center.",
+            CheckSpot.OffsetPixels => "Pixels from the center of what's found: + X goes right, + Y goes up.",
+            _ => target switch
+            {
+                CheckTarget.Color => "The middle of the patch of that color it finds.",
+                CheckTarget.Colors => "The middle of the box around all the points.",
+                _ => "The middle of the image where it's found."
+            }
+        };
     }
 
     void Load(MacroStep step)
@@ -388,6 +460,9 @@ sealed class CheckStepWindow : Window
                 SetArea(new PixelRect(screen.X + screen.Width / 4, screen.Y + screen.Height / 4, screen.Width / 2, screen.Height / 2));
         }
         SetValue(tolerance, step.Tolerance);
+        spotBox.SelectedIndex = (int)step.Spot;
+        SetValue(offsetX, step.OffsetX);
+        SetValue(offsetY, step.OffsetY);
     }
 
     /// <summary>The step as set up now, whether or not it's complete.</summary>
@@ -408,7 +483,10 @@ sealed class CheckStepWindow : Window
             AreaY = (int)(areaY.Value ?? 0),
             AreaWidth = (int)(areaW.Value ?? 1),
             AreaHeight = (int)(areaH.Value ?? 1),
-            Tolerance = (int)(tolerance.Value ?? ColorMatch.DefaultTolerance)
+            Tolerance = (int)(tolerance.Value ?? ColorMatch.DefaultTolerance),
+            Spot = aim ? (CheckSpot)Math.Max(0, spotBox.SelectedIndex) : CheckSpot.Center,
+            OffsetX = aim ? (int)(offsetX.Value ?? 0) : 0,
+            OffsetY = aim ? (int)(offsetY.Value ?? 0) : 0
         };
     }
 
@@ -542,13 +620,19 @@ sealed class CheckStepWindow : Window
             return await Task.Run(() =>
             {
                 var clock = Stopwatch.StartNew();
-                var at = ScreenCheck.Find(step, template);
-                return (at, clock.ElapsedMilliseconds);
+                var result = ScreenCheck.Find(step, template, measure: aim);
+                return (result, clock.ElapsedMilliseconds);
             });
         });
-        testResult.Text = found is { } at
-            ? "Found at (" + at.X + ", " + at.Y + ") in " + ms + " ms."
-            : "Not found right now (looked for " + ms + " ms).";
+        if (found is not { } hit)
+            testResult.Text = "Not found right now (looked for " + ms + " ms).";
+        else if (aim)
+        {
+            var click = ScreenCheck.SpotIn(step, hit.Box);
+            testResult.Text = "Found: " + hit.Box.Width + "×" + hit.Box.Height + " at (" + hit.Box.X + ", " + hit.Box.Y +
+                              "). It would click at (" + click.X + ", " + click.Y + "). Took " + ms + " ms.";
+        }
+        else testResult.Text = "Found at (" + hit.At.X + ", " + hit.At.Y + ") in " + ms + " ms.";
     }
 
     /// <summary>
